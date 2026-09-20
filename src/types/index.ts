@@ -234,17 +234,17 @@ export interface Order {
     bairro: string;
     complemento?: string;
     referencia?: string;
-  };
+  } | null;
   itens: OrderItem[];
   subtotal: number;
   desconto: number;
-  cupom?: string;
+  cupom?: string | null;
   taxaEntrega: number;
   total: number;
   pagamento: {
     forma: PaymentMethod;
     status: PaymentStatus;
-    troco?: number;
+    troco?: number | null;
     txid?: string;
   };
   status: OrderStatus;

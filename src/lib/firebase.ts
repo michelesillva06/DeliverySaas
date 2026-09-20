@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -10,18 +10,19 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Use specified database ID if available with auto long polling detection
-export const db = firebaseConfig.firestoreDatabaseId
-  ? initializeFirestore(
-      app,
-      {
-        experimentalAutoDetectLongPolling: true,
-      },
-      firebaseConfig.firestoreDatabaseId
-    )
-  : initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
-    });
+// ID do banco Firestore oficial do projeto
+export const DATABASE_ID =
+  firebaseConfig.firestoreDatabaseId || 'ai-studio-deliverysaasplat-fc259f71-8c58-4bc2-b2d2-2986291f82e8';
+
+// Inicialização única do Firestore com suporte a ignorar campos undefined
+export const db = initializeFirestore(
+  app,
+  {
+    ignoreUndefinedProperties: true,
+    experimentalAutoDetectLongPolling: true,
+  },
+  DATABASE_ID
+);
 
 // Connectivity validation check
 async function testConnection() {

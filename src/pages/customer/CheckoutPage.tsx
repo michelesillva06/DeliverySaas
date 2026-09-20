@@ -21,10 +21,11 @@ import {
   createOrderInFirestore,
   ensureAnonymousCustomerAuth,
 } from '../../services/firestoreService';
-import { Store, DeliveryZone, PaymentMethod, Order } from '../../types';
+import { Store, DeliveryZone, PaymentMethod, PaymentStatus, Order } from '../../types';
 import { useCart, CartProvider } from '../../services/cartContext';
 import { useAuth } from '../../services/authContext';
 import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl } from '../../lib/formatters';
+import { limparObjeto } from '../../lib/utils';
 import { useToast } from '../../components/Toast';
 
 export const CheckoutWrapper: React.FC = () => {
@@ -214,7 +215,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       const customerUid = currentUser?.uid || (await ensureAnonymousCustomerAuth());
 
       // Gravar pedido 100% no Firestore com número sequencial atômico
-      const order = await createOrderInFirestore({
+      const orderPayload = limparObjeto({
         storeId: store.id,
         customerUid,
         cliente: {
@@ -228,23 +229,35 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                 rua: rua.trim(),
                 numero: numero.trim(),
                 bairro: selectedZone.bairro,
-                complemento: complemento.trim() || undefined,
-                referencia: referencia.trim() || undefined,
+                complemento: (complemento ?? '').trim(),
+                referencia: (referencia ?? '').trim(),
               }
-            : undefined,
-        itens: items,
-        subtotal,
-        desconto: couponDiscount,
-        cupom: appliedCoupon?.codigo,
-        taxaEntrega: deliveryFee,
-        total,
+            : null,
+        itens: items.map((item) => ({
+          ...item,
+          obs: (item.obs ?? '').trim(),
+          complementos: (item.complementos || []).map((c) => ({
+            grupoId: c.grupoId || '',
+            grupoNome: c.grupoNome || '',
+            opcaoId: c.opcaoId || '',
+            nome: c.nome || '',
+            preco: Number(c.preco) || 0,
+          })),
+        })),
+        subtotal: Number(subtotal) || 0,
+        desconto: Number(couponDiscount) || 0,
+        cupom: appliedCoupon?.codigo ?? null,
+        taxaEntrega: Number(deliveryFee) || 0,
+        total: Number(total) || 0,
         pagamento: {
           forma: paymentMethod,
-          status: paymentMethod === 'pix' ? 'aguardando' : paymentMethod === 'whatsapp' ? 'aguardando' : 'na_entrega',
-          troco: parsedTroco,
+          status: (paymentMethod === 'pix' ? 'aguardando' : paymentMethod === 'whatsapp' ? 'aguardando' : 'na_entrega') as PaymentStatus,
+          troco: paymentMethod === 'dinheiro' && typeof parsedTroco === 'number' && !isNaN(parsedTroco) ? parsedTroco : null,
         },
-        status: 'novo',
+        status: 'novo' as const,
       });
+
+      const order = await createOrderInFirestore(orderPayload);
 
       // Limpar carrinho
       clearCart();

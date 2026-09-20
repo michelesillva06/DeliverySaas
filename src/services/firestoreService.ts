@@ -18,6 +18,7 @@ import {
 import { signInAnonymously } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { SUPPORT_WHATSAPP } from '../lib/constants';
+import { limparObjeto } from '../lib/utils';
 import {
   Store,
   DayHours,
@@ -168,13 +169,13 @@ export function subscribeToAllStores(callback: (stores: Store[]) => void): Unsub
 
 export async function saveStoreToFirestore(store: Store): Promise<void> {
   const docRef = doc(db, 'stores', store.id);
-  await setDoc(docRef, store, { merge: true });
+  await setDoc(docRef, limparObjeto(store), { merge: true });
 }
 export const saveStoreInFirestore = saveStoreToFirestore;
 
 export async function updateStoreStatusInFirestore(storeId: string, aberta: boolean): Promise<void> {
   const docRef = doc(db, 'stores', storeId);
-  await updateDoc(docRef, { aberta });
+  await updateDoc(docRef, limparObjeto({ aberta }));
 }
 
 export async function updateStoreHorariosInFirestore(
@@ -183,7 +184,7 @@ export async function updateStoreHorariosInFirestore(
   aberta: boolean
 ): Promise<void> {
   const docRef = doc(db, 'stores', storeId);
-  await updateDoc(docRef, { horarios, aberta });
+  await updateDoc(docRef, limparObjeto({ horarios, aberta }));
 }
 
 // ==========================================
@@ -280,7 +281,7 @@ export async function createOrderInFirestore(
         const sData = storeDoc.data() as Store;
         currentNumber = typeof sData.nextOrderNumber === 'number' && sData.nextOrderNumber > 0 ? sData.nextOrderNumber : 1;
       }
-      transaction.update(storeRef, { nextOrderNumber: currentNumber + 1 });
+      transaction.update(storeRef, limparObjeto({ nextOrderNumber: currentNumber + 1 }));
       return currentNumber;
     });
   } catch (tError) {
@@ -290,7 +291,7 @@ export async function createOrderInFirestore(
     if (storeSnap.exists()) {
       const sData = storeSnap.data() as Store;
       nextNumber = typeof sData.nextOrderNumber === 'number' && sData.nextOrderNumber > 0 ? sData.nextOrderNumber : 1;
-      await updateDoc(storeRef, { nextOrderNumber: nextNumber + 1 }).catch(() => {});
+      await updateDoc(storeRef, limparObjeto({ nextOrderNumber: nextNumber + 1 })).catch(() => {});
     }
   }
 
@@ -309,7 +310,7 @@ export async function createOrderInFirestore(
     ],
   };
 
-  await setDoc(orderRef, newOrder);
+  await setDoc(orderRef, limparObjeto(newOrder));
   return newOrder;
 }
 
@@ -343,7 +344,7 @@ export async function updateOrderStatusInFirestore(
     updateData.motivoCancelamento = nota;
   }
 
-  await updateDoc(docRef, updateData);
+  await updateDoc(docRef, limparObjeto(updateData));
 }
 
 export async function updateOrderPaymentStatusInFirestore(
@@ -363,15 +364,15 @@ export async function updateOrderPaymentStatusInFirestore(
     nota: nota || `Pagamento atualizado para: ${newPaymentStatus}`,
   });
 
-  await updateDoc(docRef, {
+  await updateDoc(docRef, limparObjeto({
     'pagamento.status': newPaymentStatus,
     historicoStatus: historico,
-  });
+  }));
 }
 
 export async function assignCourierInFirestore(orderId: string, courierId: string): Promise<void> {
   const docRef = doc(db, 'orders', orderId);
-  await updateDoc(docRef, { entregadorId: courierId });
+  await updateDoc(docRef, limparObjeto({ entregadorId: courierId }));
 }
 
 export async function deleteTestOrdersFromFirestore(storeId: string): Promise<number> {
@@ -401,7 +402,7 @@ export async function updateOrderInFirestore(
   partial: Partial<Order> | Record<string, any>
 ): Promise<void> {
   const docRef = doc(db, 'orders', orderId);
-  await updateDoc(docRef, partial as any);
+  await updateDoc(docRef, limparObjeto(partial) as any);
 }
 
 // ==========================================
@@ -444,7 +445,7 @@ export async function getCategoriesByStoreFromFirestore(storeId: string): Promis
 
 export async function saveCategoryToFirestore(category: Category | Omit<Category, 'id'>): Promise<string> {
   const id = (category as Category).id || `cat_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'categories', id), { ...category, id }, { merge: true });
+  await setDoc(doc(db, 'categories', id), limparObjeto({ ...category, id }), { merge: true });
   return id;
 }
 export const createCategoryInFirestore = saveCategoryToFirestore;
@@ -453,9 +454,9 @@ export const updateCategoryInFirestore = (
   partial?: Partial<Category>
 ) => {
   if (typeof idOrCategory === 'string') {
-    return updateDoc(doc(db, 'categories', idOrCategory), (partial || {}) as any);
+    return updateDoc(doc(db, 'categories', idOrCategory), limparObjeto(partial || {}) as any);
   }
-  return setDoc(doc(db, 'categories', idOrCategory.id), idOrCategory, { merge: true });
+  return setDoc(doc(db, 'categories', idOrCategory.id), limparObjeto(idOrCategory), { merge: true });
 };
 
 export async function deleteCategoryFromFirestore(categoryId: string): Promise<void> {
@@ -503,7 +504,7 @@ export async function getProductsByStoreFromFirestore(storeId: string): Promise<
 
 export async function saveProductToFirestore(product: Product | Omit<Product, 'id'>): Promise<string> {
   const id = (product as Product).id || `prod_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'products', id), { ...product, id }, { merge: true });
+  await setDoc(doc(db, 'products', id), limparObjeto({ ...product, id }), { merge: true });
   return id;
 }
 export const createProductInFirestore = saveProductToFirestore;
@@ -512,9 +513,9 @@ export const updateProductInFirestore = (
   partial?: Partial<Product>
 ) => {
   if (typeof idOrProduct === 'string') {
-    return updateDoc(doc(db, 'products', idOrProduct), (partial || {}) as any);
+    return updateDoc(doc(db, 'products', idOrProduct), limparObjeto(partial || {}) as any);
   }
-  return setDoc(doc(db, 'products', idOrProduct.id), idOrProduct, { merge: true });
+  return setDoc(doc(db, 'products', idOrProduct.id), limparObjeto(idOrProduct), { merge: true });
 };
 
 export async function updateProductPhotoInFirestore(
@@ -525,7 +526,7 @@ export async function updateProductPhotoInFirestore(
   if (!photoUrl) {
     await updateDoc(docRef, { foto: deleteField() });
   } else {
-    await updateDoc(docRef, { foto: photoUrl });
+    await updateDoc(docRef, limparObjeto({ foto: photoUrl }));
   }
 }
 
@@ -572,7 +573,7 @@ export async function getOptionGroupsByStoreFromFirestore(storeId: string): Prom
 
 export async function saveOptionGroupToFirestore(group: OptionGroup | Omit<OptionGroup, 'id'>): Promise<string> {
   const id = (group as OptionGroup).id || `opt_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'option_groups', id), { ...group, id }, { merge: true });
+  await setDoc(doc(db, 'option_groups', id), limparObjeto({ ...group, id }), { merge: true });
   return id;
 }
 export const createOptionGroupInFirestore = saveOptionGroupToFirestore;
@@ -581,9 +582,9 @@ export const updateOptionGroupInFirestore = (
   partial?: Partial<OptionGroup>
 ) => {
   if (typeof idOrGroup === 'string') {
-    return updateDoc(doc(db, 'option_groups', idOrGroup), (partial || {}) as any);
+    return updateDoc(doc(db, 'option_groups', idOrGroup), limparObjeto(partial || {}) as any);
   }
-  return setDoc(doc(db, 'option_groups', idOrGroup.id), idOrGroup, { merge: true });
+  return setDoc(doc(db, 'option_groups', idOrGroup.id), limparObjeto(idOrGroup), { merge: true });
 };
 
 export async function deleteOptionGroupFromFirestore(groupId: string): Promise<void> {
@@ -629,7 +630,7 @@ export async function getDeliveryZonesByStoreFromFirestore(storeId: string): Pro
 
 export async function saveDeliveryZoneToFirestore(zone: DeliveryZone | Omit<DeliveryZone, 'id'>): Promise<string> {
   const id = (zone as DeliveryZone).id || `zone_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'delivery_zones', id), { ...zone, id }, { merge: true });
+  await setDoc(doc(db, 'delivery_zones', id), limparObjeto({ ...zone, id }), { merge: true });
   return id;
 }
 export const createDeliveryZoneInFirestore = saveDeliveryZoneToFirestore;
@@ -638,9 +639,9 @@ export const updateDeliveryZoneInFirestore = (
   partial?: Partial<DeliveryZone>
 ) => {
   if (typeof idOrZone === 'string') {
-    return updateDoc(doc(db, 'delivery_zones', idOrZone), (partial || {}) as any);
+    return updateDoc(doc(db, 'delivery_zones', idOrZone), limparObjeto(partial || {}) as any);
   }
-  return setDoc(doc(db, 'delivery_zones', idOrZone.id), idOrZone, { merge: true });
+  return setDoc(doc(db, 'delivery_zones', idOrZone.id), limparObjeto(idOrZone), { merge: true });
 };
 
 export async function deleteDeliveryZoneFromFirestore(zoneId: string): Promise<void> {
@@ -686,7 +687,7 @@ export async function getCouponsByStoreFromFirestore(storeId: string): Promise<C
 
 export async function saveCouponToFirestore(coupon: Coupon | Omit<Coupon, 'id'>): Promise<string> {
   const id = (coupon as Coupon).id || `cp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'coupons', id), { ...coupon, id }, { merge: true });
+  await setDoc(doc(db, 'coupons', id), limparObjeto({ ...coupon, id }), { merge: true });
   return id;
 }
 export const createCouponInFirestore = saveCouponToFirestore;
@@ -775,7 +776,7 @@ export async function getCouriersByStoreFromFirestore(storeId: string): Promise<
 
 export async function saveCourierToFirestore(courier: Courier | Omit<Courier, 'id'>): Promise<string> {
   const id = (courier as Courier).id || `cour_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  await setDoc(doc(db, 'couriers', id), { ...courier, id }, { merge: true });
+  await setDoc(doc(db, 'couriers', id), limparObjeto({ ...courier, id }), { merge: true });
   return id;
 }
 export const createCourierInFirestore = saveCourierToFirestore;
@@ -805,7 +806,7 @@ export async function getUserProfileFromFirestore(uid: string): Promise<UserProf
 
 export async function saveUserProfileToFirestore(user: UserProfile): Promise<void> {
   const docRef = doc(db, 'users', user.uid);
-  await setDoc(docRef, user, { merge: true });
+  await setDoc(docRef, limparObjeto(user), { merge: true });
 }
 
 // ==========================================
@@ -838,8 +839,8 @@ export async function getSaasConfigFromFirestore(): Promise<SaasConfig> {
     if (snap.exists()) {
       return snap.data() as SaasConfig;
     }
-    await setDoc(platRef, DEFAULT_SAAS_CONFIG, { merge: true });
-    await setDoc(docRef, DEFAULT_SAAS_CONFIG, { merge: true });
+    await setDoc(platRef, limparObjeto(DEFAULT_SAAS_CONFIG), { merge: true });
+    await setDoc(docRef, limparObjeto(DEFAULT_SAAS_CONFIG), { merge: true });
     return DEFAULT_SAAS_CONFIG;
   } catch (err) {
     console.error('Erro ao buscar config do SaaS no Firestore:', err);
@@ -850,9 +851,10 @@ export async function getSaasConfigFromFirestore(): Promise<SaasConfig> {
 export async function saveSaasConfigToFirestore(config: SaasConfig): Promise<void> {
   const docRef = doc(db, 'saas_config', 'global');
   const platRef = doc(db, 'config', 'plataforma');
+  const cleanConfig = limparObjeto(config);
   await Promise.all([
-    setDoc(docRef, config, { merge: true }),
-    setDoc(platRef, config, { merge: true }),
+    setDoc(docRef, cleanConfig, { merge: true }),
+    setDoc(platRef, cleanConfig, { merge: true }),
   ]);
 }
 
@@ -895,7 +897,7 @@ export async function addStorePaymentInFirestore(payment: Omit<StorePayment, 'id
     registradoEm,
   };
 
-  await setDoc(paymentRef, fullPayment);
+  await setDoc(paymentRef, limparObjeto(fullPayment));
 
   // Se o pagamento for do tipo mensalidade, prorrogar vencimento por +30 dias e ativar a loja
   if (payment.tipo === 'mensalidade') {
@@ -912,10 +914,10 @@ export async function addStorePaymentInFirestore(payment: Omit<StorePayment, 'id
       }
       baseDate.setDate(baseDate.getDate() + 30);
 
-      await updateDoc(storeRef, {
+      await updateDoc(storeRef, limparObjeto({
         dataVencimento: baseDate.toISOString(),
         status: 'ativa',
-      });
+      }));
     }
   }
 
@@ -955,7 +957,7 @@ export async function createSaasPaymentRequestInFirestore(
     criadoEm: new Date().toISOString(),
   };
 
-  await setDoc(reqRef, newReq);
+  await setDoc(reqRef, limparObjeto(newReq));
   return id;
 }
 
@@ -989,11 +991,11 @@ export async function updateSaasPaymentRequestStatusInFirestore(
 
   const reqData = snap.data() as SaasPaymentRequest;
 
-  await updateDoc(reqRef, {
+  await updateDoc(reqRef, limparObjeto({
     status: newStatus,
     analisadoEm: new Date().toISOString(),
     analisadoPor: analisadoPor || 'superadmin',
-  });
+  }));
 
   // Se foi aprovado, automaticamente lança um pagamento do tipo mensalidade na loja
   if (newStatus === 'aprovado') {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ShieldAlert,
   Store as StoreIcon,
@@ -19,6 +19,11 @@ import {
   CheckCircle2,
   XCircle,
   Sparkles,
+  Eye,
+  EyeOff,
+  Copy,
+  RefreshCw,
+  MessageCircle,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
@@ -39,9 +44,31 @@ import {
 import { formatCurrency } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { SUPPORT_WHATSAPP } from '../../lib/constants';
+import { useActiveStore } from '../../services/activeStoreContext';
+
+// Função para gerar senha inicial forte (10 caracteres, sem 0/O/l/1)
+export function generateStrongPassword(length = 10): string {
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const nums = '23456789';
+
+  let pwd = '';
+  pwd += lower[Math.floor(Math.random() * lower.length)];
+  pwd += upper[Math.floor(Math.random() * upper.length)];
+  pwd += nums[Math.floor(Math.random() * nums.length)];
+
+  for (let i = 3; i < length; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)];
+  }
+
+  return pwd.split('').sort(() => 0.5 - Math.random()).join('');
+}
 
 export const SuperAdminPage: React.FC = () => {
   const { showToast } = useToast();
+  const navigate = useNavigate();
+  const { setActiveStoreId } = useActiveStore();
 
   const [stores, setStores] = useState<Store[]>([]);
   const [saasConfig, setSaasConfig] = useState<SaasConfig | null>(null);
@@ -56,6 +83,9 @@ export const SuperAdminPage: React.FC = () => {
   const [whatsapp, setWhatsapp] = useState('');
   const [nomeResponsavel, setNomeResponsavel] = useState('');
   const [emailResponsavel, setEmailResponsavel] = useState('');
+  const [senhaInicial, setSenhaInicial] = useState(() => generateStrongPassword(10));
+  const [showSenhaInput, setShowSenhaInput] = useState(false);
+  const [sendPasswordResetCheckbox, setSendPasswordResetCheckbox] = useState(false);
   const [plano, setPlano] = useState<string>('Profissional');
   const [valorImplantacao, setValorImplantacao] = useState<number>(299);
   const [valorMensalidade, setValorMensalidade] = useState<number>(99.9);
@@ -67,10 +97,13 @@ export const SuperAdminPage: React.FC = () => {
   const [createdSummary, setCreatedSummary] = useState<{
     nome: string;
     slug: string;
+    nomeResponsavel: string;
     email: string;
+    senhaInicial: string;
     storeLink: string;
     panelLink: string;
   } | null>(null);
+  const [showSummaryPassword, setShowSummaryPassword] = useState(false);
 
   // Estado para Edição de Loja
   const [editingStore, setEditingStore] = useState<Store | null>(null);
@@ -131,6 +164,12 @@ export const SuperAdminPage: React.FC = () => {
       return;
     }
 
+    const cleanPassword = senhaInicial.trim();
+    if (cleanPassword.length < 8) {
+      showToast('A senha inicial do lojista deve ter no mínimo 8 caracteres.', 'error');
+      return;
+    }
+
     const cleanSlug = slug.toLowerCase().trim();
     setCreatingStore(true);
 
@@ -146,10 +185,10 @@ export const SuperAdminPage: React.FC = () => {
         getApps().find((app) => app.name === 'secondary') || initializeApp(firebaseConfig, 'secondary');
       const secondaryAuth = getAuth(secondaryApp);
 
-      const tempPassword = `Pass_${Math.random().toString(36).substring(2, 8)}!1A`;
       const cleanEmail = emailResponsavel.trim().toLowerCase();
 
-      const userCred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, tempPassword);
+      // Criar usuário na instância secundária com a senha inicial informada
+      const userCred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, cleanPassword);
       const newUid = userCred.user.uid;
 
       await signOut(secondaryAuth);
@@ -249,29 +288,38 @@ export const SuperAdminPage: React.FC = () => {
         });
       }
 
-      try {
-        await sendPasswordResetEmail(secondaryAuth, cleanEmail);
-      } catch (eReset) {
-        console.warn('Erro ao enviar e-mail de reset de senha automático:', eReset);
+      // Enviar e-mail de redefinição de senha APENAS se o checkbox estiver marcado
+      if (sendPasswordResetCheckbox) {
+        try {
+          await sendPasswordResetEmail(secondaryAuth, cleanEmail);
+          showToast('E-mail de definição de senha enviado ao lojista.', 'info');
+        } catch (eReset) {
+          console.warn('Erro ao enviar e-mail de reset de senha:', eReset);
+        }
       }
 
-      showToast(`Loja "${nome}" criada com sucesso no Firestore!`, 'success');
+      showToast(`Loja "${nome}" criada com sucesso!`, 'success');
 
       const origin = window.location.origin;
       setCreatedSummary({
         nome: newStore.nome,
         slug: cleanSlug,
+        nomeResponsavel: nomeResponsavel.trim(),
         email: cleanEmail,
+        senhaInicial: cleanPassword,
         storeLink: `${origin}/${cleanSlug}`,
-        panelLink: `${origin}/painel`,
+        panelLink: `${origin}/entrar`,
       });
 
+      // Limpar formulário e regerar senha inicial para o próximo
       setNome('');
       setSlug('');
       setCustomSlug(false);
       setWhatsapp('');
       setNomeResponsavel('');
       setEmailResponsavel('');
+      setSenhaInicial(generateStrongPassword(10));
+      setSendPasswordResetCheckbox(false);
       setTab('lojas');
     } catch (err: any) {
       console.error('Erro ao criar loja:', err);
@@ -298,6 +346,20 @@ export const SuperAdminPage: React.FC = () => {
     setSavingEdit(true);
     try {
       await saveStoreToFirestore(editingStore);
+      if (editingStore.ownerUid) {
+        try {
+          await saveUserProfileToFirestore({
+            uid: editingStore.ownerUid,
+            email: editingStore.emailResponsavel || '',
+            nome: editingStore.nomeResponsavel || '',
+            role: 'owner',
+            storeId: editingStore.id,
+            criadoEm: editingStore.criadoEm || new Date().toISOString(),
+          });
+        } catch (eUser) {
+          console.warn('Erro ao atualizar perfil do usuário vinculado:', eUser);
+        }
+      }
       showToast(`Dados da loja "${editingStore.nome}" atualizados!`, 'success');
       setEditingStore(null);
     } catch (err) {
@@ -576,7 +638,7 @@ export const SuperAdminPage: React.FC = () => {
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-neutral-900 text-sm">{s.nome}</span>
                                   <a
-                                    href={`/${s.slug}`}
+                                    href={`/#/${s.slug}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="text-neutral-400 hover:text-neutral-700"
@@ -626,6 +688,18 @@ export const SuperAdminPage: React.FC = () => {
 
                           <td className="p-4 pr-6 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setActiveStoreId(s.id);
+                                  navigate('/painel');
+                                }}
+                                className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                title="Acessar e gerenciar painel desta loja"
+                              >
+                                <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Gerenciar loja</span>
+                              </button>
+
                               <button
                                 onClick={() => handleOpenPaymentModal(s)}
                                 className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
@@ -782,6 +856,56 @@ export const SuperAdminPage: React.FC = () => {
                       placeholder="carlos@pizzariabella.com.br"
                       className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-medium"
                     />
+                  </div>
+
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-neutral-700">
+                        Senha Inicial do Lojista *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setSenhaInicial(generateStrongPassword(10))}
+                        className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Gerar outra</span>
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type={showSenhaInput ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        value={senhaInicial}
+                        onChange={(e) => setSenhaInicial(e.target.value)}
+                        className="w-full p-3 pr-12 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono text-sm font-bold bg-neutral-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSenhaInput(!showSenhaInput)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                        title={showSenhaInput ? 'Ocultar senha' : 'Ver senha'}
+                      >
+                        {showSenhaInput ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-neutral-500">
+                      Senha forte gerada automaticamente. Você pode edita-la livremente (mínimo 8 caracteres).
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2 pt-1">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-neutral-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={sendPasswordResetCheckbox}
+                        onChange={(e) => setSendPasswordResetCheckbox(e.target.checked)}
+                        className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                      />
+                      <span>Enviar e-mail de definir senha ao lojista</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1079,51 +1203,120 @@ export const SuperAdminPage: React.FC = () => {
       {/* Modal de Resumo pós-criação de loja */}
       {createdSummary && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl relative">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl relative">
             <div className="flex items-center gap-3 text-emerald-600">
-              <Sparkles className="w-8 h-8" />
+              <Sparkles className="w-8 h-8 flex-shrink-0" />
               <div>
-                <h3 className="text-lg font-black text-neutral-900">Loja Criada com Sucesso!</h3>
+                <h3 className="text-lg font-black text-neutral-900">Loja Criada com Sucesso! 🎉</h3>
                 <p className="text-xs text-neutral-500">
-                  Um e-mail de redefinição de senha foi enviado para {createdSummary.email}.
+                  Os dados de acesso e os links da loja foram gerados. Copie os dados abaixo para o lojista.
                 </p>
               </div>
             </div>
 
             <div className="space-y-3 bg-neutral-50 p-4 rounded-2xl border border-neutral-200 text-xs">
               <div>
-                <span className="font-bold text-neutral-500 block">Link do Cardápio Digital (Cliente):</span>
-                <a
-                  href={createdSummary.storeLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-emerald-700 hover:underline font-bold break-all"
-                >
-                  {createdSummary.storeLink}
-                </a>
+                <span className="font-bold text-neutral-500 block mb-0.5">Link do Cardápio Público (Cliente):</span>
+                <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-neutral-200">
+                  <a
+                    href={createdSummary.storeLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-emerald-700 hover:underline font-bold break-all text-[11px]"
+                  >
+                    {createdSummary.storeLink}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdSummary.storeLink);
+                      showToast('Link da loja copiado!', 'success');
+                    }}
+                    className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    title="Copiar link"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <div>
-                <span className="font-bold text-neutral-500 block">Link do Painel do Lojista:</span>
-                <a
-                  href={createdSummary.panelLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-sky-700 hover:underline font-bold break-all"
-                >
-                  {createdSummary.panelLink}
-                </a>
+                <span className="font-bold text-neutral-500 block mb-0.5">Link do Painel do Lojista:</span>
+                <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-neutral-200">
+                  <a
+                    href={createdSummary.panelLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-sky-700 hover:underline font-bold break-all text-[11px]"
+                  >
+                    {createdSummary.panelLink}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdSummary.panelLink);
+                      showToast('Link do painel copiado!', 'success');
+                    }}
+                    className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    title="Copiar link"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <span className="font-bold text-neutral-500 block">E-mail Cadastrado:</span>
-                <span className="font-bold text-neutral-800">{createdSummary.email}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-neutral-200/60">
+                <div>
+                  <span className="font-bold text-neutral-500 block mb-0.5">E-mail do Lojista:</span>
+                  <div className="font-bold font-mono text-neutral-800 break-all bg-white p-2 rounded-xl border border-neutral-200 text-[11px]">
+                    {createdSummary.email}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-bold text-neutral-500 block mb-0.5">Senha Inicial:</span>
+                  <div className="flex items-center justify-between gap-1 bg-white p-2 rounded-xl border border-neutral-200 font-mono font-bold text-neutral-900 text-[11px]">
+                    <span>{showSummaryPassword ? createdSummary.senhaInicial : '••••••••'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSummaryPassword(!showSummaryPassword)}
+                      className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                      title={showSummaryPassword ? 'Ocultar senha' : 'Ver senha'}
+                    >
+                      {showSummaryPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  const text = `--- DADOS DE ACESSO DA LOJA ---\nLoja: ${createdSummary.nome}\nCardápio Público: ${createdSummary.storeLink}\nPainel do Lojista: ${createdSummary.panelLink}\nE-mail: ${createdSummary.email}\nSenha Inicial: ${createdSummary.senhaInicial}`;
+                  navigator.clipboard.writeText(text);
+                  showToast('Todos os dados foram copiados!', 'success');
+                }}
+                className="w-full py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Copiar Tudo</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const msg = `Olá ${createdSummary.nomeResponsavel || createdSummary.nome}! Sua loja foi criada com sucesso na plataforma Pede AI! 🎉\n\n📍 *Acesse seu painel de gestão:*\n${createdSummary.panelLink}\n\n🔑 *Seus dados de acesso:*\n• E-mail: ${createdSummary.email}\n• Senha inicial: ${createdSummary.senhaInicial}\n\n💡 *Recomendamos alterar sua senha no primeiro acesso.*\n\n🛍️ *Seu cardápio público:*\n${createdSummary.storeLink}\n\nBons negócios e boas vendas! 🚀`;
+                  navigator.clipboard.writeText(msg);
+                  showToast('Mensagem para WhatsApp copiada!', 'success');
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Copiar p/ WhatsApp</span>
+              </button>
             </div>
 
             <button
               onClick={() => setCreatedSummary(null)}
-              className="w-full py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs shadow-md transition-colors cursor-pointer"
+              className="w-full py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs shadow-md transition-colors cursor-pointer"
             >
               Concluir e Voltar
             </button>

@@ -2,11 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSuperAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == "comercial@pedeai.com.br" ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
+      );
+    }
+
+    // Acesso irrestrito total para SuperAdmin em qualquer documento
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
     // Lojas (Stores)
     match /stores/{storeId} {
       allow read: if true;
       allow create: if request.auth != null;
       allow update, delete: if true;
+
+      // Subcoleção de Produtos da Loja (se houver)
+      match /products/{productId} {
+        allow read, write: if true;
+      }
 
       // Subcoleção de Pagamentos da Loja
       match /pagamentos/{pagamentoId} {
@@ -63,15 +80,19 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // Usuários
+    // Usuários: Impede auto-atribuição do role 'superadmin' por não-superadmins
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isSuperAdmin() || (
+        (!('role' in request.resource.data) || request.resource.data.role != 'superadmin')
+      );
+      allow delete: if isSuperAdmin();
     }
 
     // Configuração Global do SaaS / Plataforma
     match /saas_config/{configId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isSuperAdmin();
     }
 
     match /config/{configId} {

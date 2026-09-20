@@ -57,8 +57,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, prim
       </div>
 
       {/* Foto do Produto */}
-      {product.foto && (
-        <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-neutral-100 flex-shrink-0 relative">
+      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-neutral-100 flex-shrink-0 relative border border-neutral-100/80 shadow-2xs">
+        {product.foto ? (
           <img
             src={product.foto}
             alt={product.nome}
@@ -66,8 +66,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick, prim
             loading="lazy"
             referrerPolicy="no-referrer"
           />
-        </div>
-      )}
+        ) : (
+          <div className="w-full h-full flex items-center justify-center font-black text-xl sm:text-2xl text-neutral-400 bg-neutral-100 select-none">
+            {product.nome ? product.nome.charAt(0).toUpperCase() : '?'}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

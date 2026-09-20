@@ -59,7 +59,7 @@ export const StorefrontWrapper: React.FC = () => {
         <div className="w-16 h-16 rounded-3xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500 mb-4">
           <Utensils className="w-8 h-8" />
         </div>
-        <h1 className="text-xl sm:text-2xl font-black text-white">Estabelecimento não encontrado</h1>
+        <h1 className="text-xl sm:text-2xl font-black text-white">Loja não encontrada</h1>
         <p className="text-xs sm:text-sm text-neutral-400 mt-2 max-w-sm">
           O link que você acessou não corresponde a nenhuma loja cadastrada.
         </p>
@@ -125,6 +125,20 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    document.title = `${store.nome} | Cardápio Digital - Pede AI`;
+    const shareImage = store.logo || store.capa;
+    if (shareImage) {
+      let ogImageMeta = document.querySelector('meta[property="og:image"]');
+      if (!ogImageMeta) {
+        ogImageMeta = document.createElement('meta');
+        ogImageMeta.setAttribute('property', 'og:image');
+        document.head.appendChild(ogImageMeta);
+      }
+      ogImageMeta.setAttribute('content', shareImage);
+    }
+  }, [store.nome, store.logo, store.capa]);
 
   // Assinar atualizações em tempo real do cardápio exclusivamente via Firestore
   useEffect(() => {

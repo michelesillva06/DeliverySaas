@@ -109,9 +109,23 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {error && (
-          <div className="p-3.5 bg-rose-950/60 border border-rose-800 text-rose-300 text-xs rounded-xl flex items-center gap-2.5 animate-shake">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-            <span>{error}</span>
+          <div className="p-3.5 bg-rose-950/60 border border-rose-800 text-rose-300 text-xs rounded-xl flex flex-col gap-2 animate-shake">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+              <span className="font-medium">{error}</span>
+            </div>
+            {error.includes('incorretos') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotEmail(email);
+                  setShowForgotModal(true);
+                }}
+                className="text-left text-[11px] text-rose-200 hover:text-white underline font-bold mt-0.5 cursor-pointer"
+              >
+                Esqueceu sua senha? Clique aqui para redefini-la
+              </button>
+            )}
           </div>
         )}
 

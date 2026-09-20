@@ -285,7 +285,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
           ? `Dinheiro${order.pagamento.troco ? ` (Troco para ${formatCurrency(order.pagamento.troco)})` : ''}`
           : 'Combinar no WhatsApp'
       }\n\n`;
-      whatsMsg += `*Acompanhe o pedido em tempo real:*\n${window.location.origin}/${store.slug}/pedido/${order.id}`;
+      whatsMsg += `*Acompanhe o pedido em tempo real:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
       // Abrir WhatsApp da loja e redirecionar para tela de acompanhamento
       if (store.whatsapp) {

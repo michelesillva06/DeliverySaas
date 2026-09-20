@@ -19,13 +19,13 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({ store }) => {
           <img
             src={store.capa}
             alt={store.nome}
-            className="w-full h-full object-cover opacity-85"
+            className="w-full h-full object-cover opacity-90"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="w-full h-full bg-neutral-800" />
+          <div className="w-full h-full bg-neutral-900" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
       </div>
 
       {/* Conteúdo do Estabelecimento */}

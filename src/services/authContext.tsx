@@ -33,31 +33,39 @@ export function formatFirebaseAuthError(err: any): string {
   const code = err.code || '';
   const message = err.message || '';
 
-  console.error('[Auth Flow] Detalhes do erro Firebase:', { code, message, errorObj: err });
+  const isUserCredentialError =
+    code === 'auth/user-not-found' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/invalid-credential' ||
+    code === 'auth/invalid-email';
 
-  let ptMessage = 'Ocorreu um erro ao processar sua autenticação.';
-
-  if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-    ptMessage = 'E-mail ou senha incorretos.';
-  } else if (code === 'auth/invalid-email') {
-    ptMessage = 'O formato do e-mail digitado é inválido.';
-  } else if (code === 'auth/email-already-in-use') {
-    ptMessage = 'Este e-mail já está cadastrado no sistema.';
-  } else if (code === 'auth/weak-password') {
-    ptMessage = 'A senha informada é muito fraca (mínimo 6 caracteres).';
-  } else if (code === 'auth/user-disabled') {
-    ptMessage = 'Esta conta de usuário foi desativada.';
-  } else if (code === 'auth/too-many-requests') {
-    ptMessage = 'Muitas tentativas consecutivas. Aguarde alguns instantes e tente novamente.';
-  } else if (code === 'auth/operation-not-allowed') {
-    ptMessage = 'O provedor de e-mail e senha não está habilitado no console do Firebase.';
-  } else if (code === 'auth/network-request-failed') {
-    ptMessage = 'Falha de conexão com os servidores do Firebase. Verifique sua internet.';
-  } else if (code.includes('api-key-not-valid')) {
-    ptMessage = 'A chave de API do Firebase está inválida. Verifique a configuração.';
+  if (isUserCredentialError) {
+    console.warn('[Auth Flow] Tentativa de login com credenciais incorretas ou inválidas:', { code, cleanMessage: message });
+  } else {
+    console.error('[Auth Flow] Detalhes do erro Firebase:', { code, message, errorObj: err });
   }
 
-  return code ? `${ptMessage} (Código: ${code})` : ptMessage;
+  if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    return 'E-mail ou senha incorretos. Verifique suas credenciais ou utilize a recuperação de senha.';
+  } else if (code === 'auth/invalid-email') {
+    return 'O formato do e-mail digitado é inválido. Verifique o endereço e tente novamente.';
+  } else if (code === 'auth/email-already-in-use') {
+    return 'Este e-mail já está cadastrado no sistema.';
+  } else if (code === 'auth/weak-password') {
+    return 'A senha informada é muito fraca (mínimo 6 caracteres).';
+  } else if (code === 'auth/user-disabled') {
+    return 'Esta conta de usuário foi desativada pelo administrador.';
+  } else if (code === 'auth/too-many-requests') {
+    return 'Muitas tentativas malsucedidas. Por favor, aguarde alguns instantes ou redefina sua senha.';
+  } else if (code === 'auth/operation-not-allowed') {
+    return 'O provedor de e-mail/senha não está habilitado no console do Firebase.';
+  } else if (code === 'auth/network-request-failed') {
+    return 'Falha de conexão com o servidor. Verifique sua conexão com a internet.';
+  } else if (code.includes('api-key-not-valid')) {
+    return 'Chave de API do Firebase inválida. Entre em contato com o suporte.';
+  }
+
+  return code ? `Erro na autenticação (${code}).` : 'Ocorreu um erro ao processar sua autenticação.';
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -155,10 +163,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { success: true, user: profile };
     } catch (err: any) {
-      console.error('[Auth Flow] Erro no signInWithEmailAndPassword:', err);
+      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found' || err?.code === 'auth/wrong-password') {
+        console.warn('[Auth Flow] Login recusado pelo Firebase Auth (credenciais incorretas):', cleanEmail);
+      } else {
+        console.error('[Auth Flow] Erro no signInWithEmailAndPassword:', err);
+      }
       return {
         success: false,
-        errorCode: err.code,
+        errorCode: err?.code,
         message: formatFirebaseAuthError(err),
       };
     }

@@ -23,6 +23,7 @@ import {
 } from '../../services/firestoreService';
 import { formatCurrency } from '../../lib/formatters';
 import { gerarQrCodeDataUrl } from '../../lib/pix';
+import { ImageUploader } from '../../components/ImageUploader';
 import { useToast } from '../../components/Toast';
 
 export const StoreSettingsPage: React.FC = () => {
@@ -55,7 +56,7 @@ export const StoreSettingsPage: React.FC = () => {
 
   useEffect(() => {
     // Gerar QR Code do Cardápio para a aba QR Code
-    const storeUrl = `${window.location.origin}/${store.slug}`;
+    const storeUrl = `${window.location.origin}/#/${store.slug}`;
     gerarQrCodeDataUrl(storeUrl).then(setStoreQrCodeUrl);
   }, [store.slug]);
 
@@ -248,24 +249,26 @@ export const StoreSettingsPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-bold text-neutral-700 mb-1">URL do Logotipo</label>
-              <input
-                type="url"
-                value={formData.logo || ''}
-                onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
-                placeholder="https://..."
-                className="w-full p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+              <ImageUploader
+                tipo="logo"
+                storeId={store.id}
+                currentImageUrl={formData.logo}
+                label="Logotipo da Loja"
+                aspectRatioLabel="Proporção 1:1"
+                onImageUploaded={(url) => setFormData((prev) => ({ ...prev, logo: url }))}
+                onImageRemoved={() => setFormData((prev) => ({ ...prev, logo: '' }))}
               />
             </div>
 
-            <div>
-              <label className="block font-bold text-neutral-700 mb-1">URL da Imagem de Capa</label>
-              <input
-                type="url"
-                value={formData.capa || ''}
-                onChange={(e) => setFormData({ ...formData, capa: e.target.value })}
-                placeholder="https://..."
-                className="w-full p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+            <div className="sm:col-span-2">
+              <ImageUploader
+                tipo="capa"
+                storeId={store.id}
+                currentImageUrl={formData.capa}
+                label="Imagem de Capa (Banner da Loja)"
+                aspectRatioLabel="Proporção 3:1"
+                onImageUploaded={(url) => setFormData((prev) => ({ ...prev, capa: url }))}
+                onImageRemoved={() => setFormData((prev) => ({ ...prev, capa: '' }))}
               />
             </div>
 
@@ -702,13 +705,13 @@ export const StoreSettingsPage: React.FC = () => {
           </div>
 
           <div className="text-xs font-mono text-neutral-600 bg-neutral-100 p-2.5 rounded-xl break-all">
-            {window.location.origin}/{store.slug}
+            {window.location.origin}/#/{store.slug}
           </div>
 
           <div className="flex justify-center gap-2">
             <button
               onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/${store.slug}`);
+                navigator.clipboard.writeText(`${window.location.origin}/#/${store.slug}`);
                 showToast('Link do cardápio copiado!', 'success');
               }}
               className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"

@@ -6,6 +6,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   query,
   where,
   orderBy,
@@ -505,6 +506,18 @@ export const updateProductInFirestore = (
   }
   return setDoc(doc(db, 'products', idOrProduct.id), idOrProduct, { merge: true });
 };
+
+export async function updateProductPhotoInFirestore(
+  productId: string,
+  photoUrl: string | null
+): Promise<void> {
+  const docRef = doc(db, 'products', productId);
+  if (!photoUrl) {
+    await updateDoc(docRef, { foto: deleteField() });
+  } else {
+    await updateDoc(docRef, { foto: photoUrl });
+  }
+}
 
 export async function deleteProductFromFirestore(productId: string): Promise<void> {
   await deleteDoc(doc(db, 'products', productId));

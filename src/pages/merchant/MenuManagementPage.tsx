@@ -13,8 +13,12 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { Store, Category, Product, OptionGroup, OptionItem } from '../../types';
+import { ImageUploader } from '../../components/ImageUploader';
+import { BatchImageUploaderModal } from '../../components/BatchImageUploaderModal';
+import { deleteImage } from '../../services/imageService';
 import {
   subscribeToCategoriesByStore,
   subscribeToProductsByStore,
@@ -24,6 +28,7 @@ import {
   deleteCategoryInFirestore,
   createProductInFirestore,
   updateProductInFirestore,
+  updateProductPhotoInFirestore,
   deleteProductInFirestore,
   createOptionGroupInFirestore,
   updateOptionGroupInFirestore,
@@ -53,6 +58,8 @@ export const MenuManagementPage: React.FC = () => {
   const [editingOptionGroup, setEditingOptionGroup] = useState<OptionGroup | null>(null);
   const [isOptionGroupModalOpen, setIsOptionGroupModalOpen] = useState(false);
   const [savingOptionGroup, setSavingOptionGroup] = useState(false);
+
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
 
   const [searchProd, setSearchProd] = useState('');
   const [selectedCatFilter, setSelectedCatFilter] = useState('');
@@ -123,6 +130,23 @@ export const MenuManagementPage: React.FC = () => {
         console.error(err);
         showToast('Erro ao excluir produto.', 'error');
       }
+    }
+  };
+
+  const handleRemoveProductPhoto = async (prod: Product) => {
+    if (!prod.foto) return;
+    if (!window.confirm(`Tem certeza que deseja remover a foto do produto "${prod.nome}"?`)) return;
+
+    try {
+      if (prod.foto.startsWith('http')) {
+        await deleteImage(prod.foto).catch(console.warn);
+      }
+      await updateProductPhotoInFirestore(prod.id, null);
+      showToast(`Foto de "${prod.nome}" removida com sucesso.`, 'info');
+    } catch (err: any) {
+      console.error('[MenuManagement] Erro ao remover foto do produto:', err);
+      const msg = err?.code ? `[${err.code}] ${err.message}` : err?.message || 'Erro ao remover foto.';
+      showToast(`Erro ao remover foto: ${msg}`, 'error');
     }
   };
 
@@ -330,13 +354,25 @@ export const MenuManagementPage: React.FC = () => {
               </select>
             </div>
 
-            <button
-              onClick={() => handleOpenProductModal()}
-              className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo Produto</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsBatchModalOpen(true)}
+                className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                title="Enviar várias fotos de uma vez com correspondência por nome"
+              >
+                <Sparkles className="w-4 h-4 text-rose-600" />
+                <span className="hidden sm:inline">Enviar Várias Fotos</span>
+                <span className="sm:hidden">Fotos em Lote</span>
+              </button>
+
+              <button
+                onClick={() => handleOpenProductModal()}
+                className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Produto</span>
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
@@ -365,14 +401,27 @@ export const MenuManagementPage: React.FC = () => {
                       <tr key={p.id} className="hover:bg-neutral-50/80 transition-colors">
                         <td className="p-3 pl-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-neutral-100 overflow-hidden flex-shrink-0">
+                            <div className="relative w-10 h-10 rounded-lg bg-neutral-100 overflow-hidden flex-shrink-0 group">
                               {p.foto ? (
-                                <img
-                                  src={p.foto}
-                                  alt={p.nome}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
+                                <>
+                                  <img
+                                    src={p.foto}
+                                    alt={p.nome}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveProductPhoto(p);
+                                    }}
+                                    className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
+                                    title="Remover foto do produto"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                                  </button>
+                                </>
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center text-neutral-300">
                                   <Utensils className="w-4 h-4" />
@@ -633,13 +682,19 @@ export const MenuManagementPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-bold text-neutral-700 mb-1">URL da Foto</label>
-                <input
-                  type="url"
-                  value={editingProduct.foto || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, foto: e.target.value })}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                <ImageUploader
+                  tipo="produto"
+                  storeId={store.id}
+                  entityId={editingProduct.id || undefined}
+                  currentImageUrl={editingProduct.foto}
+                  label="Foto do Produto"
+                  aspectRatioLabel="Proporção 1:1"
+                  onImageUploaded={(url) =>
+                    setEditingProduct((prev) => (prev ? { ...prev, foto: url } : null))
+                  }
+                  onImageRemoved={() =>
+                    setEditingProduct((prev) => (prev ? { ...prev, foto: '' } : null))
+                  }
                 />
               </div>
 
@@ -944,6 +999,18 @@ export const MenuManagementPage: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+
+      {/* MODAL: ENVIO EM LOTE DE FOTOS */}
+      {isBatchModalOpen && (
+        <BatchImageUploaderModal
+          storeId={store.id}
+          products={products}
+          onClose={() => setIsBatchModalOpen(false)}
+          onSuccess={() => {
+            // Atualizado automaticamente pelos listeners em tempo real do Firestore
+          }}
+        />
       )}
     </div>
   );

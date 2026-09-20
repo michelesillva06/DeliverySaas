@@ -22,6 +22,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
+import { useActiveStore } from '../../services/activeStoreContext';
 import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP, getWhatsAppSupportLink } from '../../lib/constants';
 import {
   getStoreFromFirestore,
@@ -37,6 +38,7 @@ export const PanelLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
+  const { activeStoreId, clearActiveStore } = useActiveStore();
   const { showToast } = useToast();
 
   const [store, setStore] = useState<Store | null>(null);
@@ -44,11 +46,14 @@ export const PanelLayout: React.FC = () => {
   const [isMutedState, setIsMutedState] = useState(() => getIsMuted());
   const [newOrdersCount, setNewOrdersCount] = useState(0);
 
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const effectiveStoreId = isSuperAdmin ? activeStoreId : currentUser?.storeId || null;
+
   useEffect(() => {
-    if (!currentUser?.storeId) return;
+    if (!effectiveStoreId) return;
 
     // Buscar inicial do Firestore
-    getStoreFromFirestore(currentUser.storeId).then((st) => {
+    getStoreFromFirestore(effectiveStoreId).then((st) => {
       if (st) {
         // Verificar se a data de vencimento passou e marcar como 'vencida' se estivesse 'ativa'
         if (st.dataVencimento && st.status === 'ativa') {
@@ -63,7 +68,7 @@ export const PanelLayout: React.FC = () => {
     });
 
     // Escutar Loja em tempo real do Firestore
-    const unsubStore = subscribeToStore(currentUser.storeId, (updated) => {
+    const unsubStore = subscribeToStore(effectiveStoreId, (updated) => {
       if (updated) {
         if (updated.dataVencimento && updated.status === 'ativa') {
           const vence = new Date(updated.dataVencimento);
@@ -77,7 +82,7 @@ export const PanelLayout: React.FC = () => {
     });
 
     // Escutar novos pedidos em tempo real do Firestore para tocar alarme e piscar título
-    const unsubOrders = subscribeToOrdersByStore(currentUser.storeId, (orders) => {
+    const unsubOrders = subscribeToOrdersByStore(effectiveStoreId, (orders) => {
       const pendingNovos = orders.filter((o) => o.status === 'novo');
       setNewOrdersCount(pendingNovos.length);
 
@@ -96,7 +101,7 @@ export const PanelLayout: React.FC = () => {
       stopOrderAlarmLoop();
       stopTitleBlink();
     };
-  }, [currentUser?.storeId]);
+  }, [effectiveStoreId]);
 
   const handleToggleStoreOpen = async () => {
     if (!store) return;
@@ -159,8 +164,41 @@ export const PanelLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100 flex flex-col lg:flex-row">
-      {/* Barra Lateral Desktop */}
+    <div className="min-h-screen bg-neutral-100 flex flex-col">
+      {/* Banner Fixo SuperAdmin Gerenciando Loja */}
+      {isSuperAdmin && activeStoreId && (
+        <div className="bg-amber-400 text-neutral-950 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-sm font-bold text-xs sticky top-0 z-50">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-neutral-900 flex-shrink-0" />
+            <span>
+              Você está gerenciando: <strong>{store.nome}</strong> (modo administrador)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/#/${store.slug}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg transition-colors flex items-center gap-1.5 text-[11px]"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Ver cardápio público</span>
+            </a>
+            <button
+              onClick={() => {
+                clearActiveStore();
+                navigate('/admin');
+              }}
+              className="px-3 py-1 bg-white hover:bg-neutral-100 text-neutral-900 border border-neutral-300 rounded-lg transition-colors text-[11px] cursor-pointer"
+            >
+              Sair da loja
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col lg:flex-row">
+        {/* Barra Lateral Desktop */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-neutral-200 flex-shrink-0 min-h-screen sticky top-0 h-screen">
         {/* Identificação da Loja */}
         <div className="p-4 border-b border-neutral-200 flex items-center gap-3">
@@ -246,7 +284,7 @@ export const PanelLayout: React.FC = () => {
         <div className="p-3 border-t border-neutral-200 bg-neutral-50 space-y-2">
           {/* Link para o Cardápio do Cliente */}
           <a
-            href={`/${store.slug}`}
+            href={`/#/${store.slug}`}
             target="_blank"
             rel="noreferrer"
             className="w-full py-2 px-3 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-xl text-xs font-semibold text-neutral-700 flex items-center justify-between transition-colors"
@@ -347,7 +385,7 @@ export const PanelLayout: React.FC = () => {
 
             {/* Acesso rápido ao Cardápio */}
             <a
-              href={`/${store.slug}`}
+              href={`/#/${store.slug}`}
               target="_blank"
               rel="noreferrer"
               className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
@@ -441,7 +479,7 @@ export const PanelLayout: React.FC = () => {
 
             <div className="pt-3 border-t border-neutral-200 space-y-2">
               <a
-                href={`/${store.slug}`}
+                href={`/#/${store.slug}`}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full py-2 text-center bg-neutral-100 rounded-xl text-xs font-bold text-neutral-800 block"
@@ -467,6 +505,7 @@ export const PanelLayout: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

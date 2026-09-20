@@ -147,11 +147,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               src={product.foto}
               alt={product.nome}
               className="w-full h-full object-cover"
+              loading="lazy"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-neutral-400 font-medium">
-              Sem foto disponível
+            <div className="w-full h-full flex items-center justify-center font-black text-5xl text-neutral-300 bg-neutral-100 select-none">
+              {product.nome ? product.nome.charAt(0).toUpperCase() : '?'}
             </div>
           )}
           <button

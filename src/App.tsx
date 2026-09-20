@@ -1,6 +1,7 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './services/authContext';
+import { ActiveStoreProvider, useActiveStore } from './services/activeStoreContext';
 import { ToastProvider } from './components/Toast';
 
 // Landing Page
@@ -31,6 +32,7 @@ import { SuperAdminPage } from './pages/admin/SuperAdminPage';
 // Route Guards
 const MerchantRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, loading } = useAuth();
+  const { activeStoreId } = useActiveStore();
 
   if (loading) {
     return (
@@ -40,7 +42,20 @@ const MerchantRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     );
   }
 
-  if (!currentUser || !currentUser.storeId) {
+  if (!currentUser) {
+    return <Navigate to="/entrar" replace />;
+  }
+
+  // Se for superadmin, exige a seleção prévia de uma loja no contexto activeStoreId
+  if (currentUser.role === 'superadmin') {
+    if (!activeStoreId) {
+      return <Navigate to="/admin" replace />;
+    }
+    return <>{children}</>;
+  }
+
+  // Para lojista normal, exige ter um storeId vinculado
+  if (!currentUser.storeId) {
     return <Navigate to="/entrar" replace />;
   }
 
@@ -67,9 +82,10 @@ const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AuthProvider>
-        <ToastProvider>
+        <ActiveStoreProvider>
+          <ToastProvider>
           <Routes>
             {/* Página Inicial (Landing Page Oficial do SaaS - NUNCA abre loja) */}
             <Route path="/" element={<LandingHomePage />} />
@@ -117,7 +133,8 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ToastProvider>
-      </AuthProvider>
-    </BrowserRouter>
+      </ActiveStoreProvider>
+    </AuthProvider>
+    </HashRouter>
   );
 }

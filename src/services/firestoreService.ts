@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
+import { SUPPORT_WHATSAPP } from '../lib/constants';
 import {
   Store,
   Category,
@@ -790,11 +791,11 @@ export async function saveUserProfileToFirestore(user: UserProfile): Promise<voi
 const DEFAULT_SAAS_CONFIG: SaasConfig = {
   precoPlanoStarter: 49.9,
   precoPlanoPro: 99.9,
-  pixSuperAdmin: 'saas.pagamentos@deliveryhub.com.br',
+  pixSuperAdmin: 'saas.pagamentos@pedeai.com.br',
   pixTipoChave: 'email',
-  nomeRecebedor: 'DELIVERY SAAS PLATAFORMA',
-  cidade: 'SAO PAULO',
-  whatsappSuporte: '5511999998888',
+  nomeRecebedor: 'PEDE AI PLATAFORMA',
+  cidade: 'MANAUS',
+  whatsappSuporte: SUPPORT_WHATSAPP,
   planos: {
     iniciante: { preco: 49.9, diasTrial: 7, maxProdutos: 50 },
     pro: { preco: 99.9, diasTrial: 7, maxProdutos: 250 },
@@ -804,12 +805,18 @@ const DEFAULT_SAAS_CONFIG: SaasConfig = {
 
 export async function getSaasConfigFromFirestore(): Promise<SaasConfig> {
   try {
+    const platRef = doc(db, 'config', 'plataforma');
+    const snapPlat = await getDoc(platRef);
+    if (snapPlat.exists()) {
+      return snapPlat.data() as SaasConfig;
+    }
     const docRef = doc(db, 'saas_config', 'global');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       return snap.data() as SaasConfig;
     }
-    await setDoc(docRef, DEFAULT_SAAS_CONFIG);
+    await setDoc(platRef, DEFAULT_SAAS_CONFIG, { merge: true });
+    await setDoc(docRef, DEFAULT_SAAS_CONFIG, { merge: true });
     return DEFAULT_SAAS_CONFIG;
   } catch (err) {
     console.error('Erro ao buscar config do SaaS no Firestore:', err);
@@ -819,18 +826,29 @@ export async function getSaasConfigFromFirestore(): Promise<SaasConfig> {
 
 export async function saveSaasConfigToFirestore(config: SaasConfig): Promise<void> {
   const docRef = doc(db, 'saas_config', 'global');
-  await setDoc(docRef, config, { merge: true });
+  const platRef = doc(db, 'config', 'plataforma');
+  await Promise.all([
+    setDoc(docRef, config, { merge: true }),
+    setDoc(platRef, config, { merge: true }),
+  ]);
 }
 
 export function subscribeToSaasConfig(callback: (config: SaasConfig) => void): Unsubscribe {
-  const docRef = doc(db, 'saas_config', 'global');
+  const platRef = doc(db, 'config', 'plataforma');
   return onSnapshot(
-    docRef,
+    platRef,
     (snap) => {
       if (snap.exists()) {
         callback(snap.data() as SaasConfig);
       } else {
-        callback(DEFAULT_SAAS_CONFIG);
+        const docRef = doc(db, 'saas_config', 'global');
+        getDoc(docRef).then((s) => {
+          if (s.exists()) {
+            callback(s.data() as SaasConfig);
+          } else {
+            callback(DEFAULT_SAAS_CONFIG);
+          }
+        });
       }
     },
     (err) => {

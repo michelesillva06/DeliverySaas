@@ -132,7 +132,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ order, store }) 
         <p>Agradecemos a preferência!</p>
         <p>www.{store.slug}.delivery</p>
         <p className="mt-2 text-neutral-400">--------------------------------</p>
-        <p className="text-[9px]">SaaS Delivery Multi-Lojista</p>
+        <p className="text-[9px]">Pede AI • Plataforma de Delivery</p>
       </div>
     </div>
   );

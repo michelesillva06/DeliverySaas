@@ -19,8 +19,10 @@ import {
   Menu,
   X,
   ShieldAlert,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
+import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP, getWhatsAppSupportLink } from '../../lib/constants';
 import {
   getStoreFromFirestore,
   subscribeToStore,
@@ -137,8 +139,17 @@ export const PanelLayout: React.FC = () => {
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-neutral-100">
         <StoreIcon className="w-12 h-12 text-neutral-400 mb-2" />
         <h2 className="text-lg font-bold text-neutral-800">Nenhuma loja vinculada a este usuário</h2>
-        <p className="text-xs text-neutral-500 mt-1">Entre em contato com o suporte para vincular sua loja.</p>
-        <div className="flex gap-2 mt-4">
+        <p className="text-xs text-neutral-500 mt-1 text-center max-w-sm">Entre em contato com o suporte para vincular sua loja ao Pede AI.</p>
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <a
+            href={getWhatsAppSupportLink(SUPPORT_WHATSAPP, 'Olá! Minha conta não possui uma loja vinculada na plataforma Pede AI. Podem me ajudar?')}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>Falar com o suporte</span>
+          </a>
           <button onClick={handleLogout} className="px-4 py-2 bg-neutral-900 text-white rounded-xl text-xs font-bold">
             Sair
           </button>
@@ -242,6 +253,20 @@ export const PanelLayout: React.FC = () => {
           >
             <span>Ver Cardápio do Cliente</span>
             <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
+          </a>
+
+          {/* Link Suporte Pede AI */}
+          <a
+            href={getWhatsAppSupportLink(SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2 px-3 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-between transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Suporte Pede AI</span>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" />
           </a>
 
           {/* Super Admin Shortcut if role is superadmin */}
@@ -422,6 +447,15 @@ export const PanelLayout: React.FC = () => {
                 className="w-full py-2 text-center bg-neutral-100 rounded-xl text-xs font-bold text-neutral-800 block"
               >
                 Abrir Cardápio do Cliente
+              </a>
+              <a
+                href={getWhatsAppSupportLink(SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2 text-center bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-700" />
+                <span>Suporte Pede AI</span>
               </a>
               <button
                 onClick={handleLogout}

@@ -1,6 +1,6 @@
 {
-  "name": "DeliverySaaS - Plataforma Multi-Lojista de Delivery",
-  "description": "Sistema completo de delivery multi-lojista com cardápio digital PWA, pedidos em tempo real, Pix copia e cola com QR Code, comanda térmica, painel do lojista e super admin.",
+  "name": "Pede AI - Plataforma de Delivery e Cardápio Digital",
+  "description": "Sistema completo de delivery e cardápio digital PWA com pedidos em tempo real, Pix copia e cola com QR Code, comanda térmica, painel do lojista e super admin.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

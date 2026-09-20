@@ -39,10 +39,10 @@ export const SubscriptionPage: React.FC = () => {
   // Gerar QR Code Pix dinamicamente com base na chave do SuperAdmin e no valor da mensalidade da loja
   useEffect(() => {
     async function updatePix() {
-      const chavePix = saasConfig?.pixSuperAdmin || 'financeiro@deliverysaas.com.br';
+      const chavePix = saasConfig?.pixSuperAdmin || 'saas.pagamentos@pedeai.com.br';
       const valor = store.valorMensalidade || 99.9;
-      const nomeRecebedor = saasConfig?.nomeRecebedor || 'DELIVERY SAAS PLATAFORMA';
-      const cidade = saasConfig?.cidade || 'SAO PAULO';
+      const nomeRecebedor = saasConfig?.nomeRecebedor || 'PEDE AI PLATAFORMA';
+      const cidade = saasConfig?.cidade || 'MANAUS';
 
       setLoadingQr(true);
       try {
@@ -232,7 +232,7 @@ export const SubscriptionPage: React.FC = () => {
                 Chave Pix (E-mail / Telefone / CPF / Aleatória)
               </label>
               <div className="p-3 bg-white border border-neutral-300 rounded-xl font-mono text-xs font-bold text-neutral-800 break-all">
-                {saasConfig?.pixSuperAdmin || 'pix@deliverysaas.com.br'}
+                {saasConfig?.pixSuperAdmin || 'saas.pagamentos@pedeai.com.br'}
               </div>
             </div>
 

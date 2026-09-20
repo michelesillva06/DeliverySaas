@@ -68,8 +68,13 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Configuração Global do SaaS
+    // Configuração Global do SaaS / Plataforma
     match /saas_config/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /config/{configId} {
       allow read: if true;
       allow write: if true;
     }

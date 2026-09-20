@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
 import { useToast } from '../../components/Toast';
+import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE, getWhatsAppSupportLink } from '../../lib/constants';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -176,14 +177,14 @@ export const LoginPage: React.FC = () => {
 
         {/* Footer */}
         <div className="pt-4 border-t border-neutral-800 text-center text-xs text-neutral-400">
-          <span>É lojista e deseja contratar? </span>
+          <span>Ainda não tem loja? </span>
           <a
-            href="https://wa.me/5592984550000?text=Ol%C3%A1!%20Gostaria%20de%20contratar%20o%20sistema%20para%20o%20meu%20estabelecimento."
+            href={getWhatsAppSupportLink(SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE)}
             target="_blank"
             rel="noopener noreferrer"
             className="font-bold text-rose-400 hover:text-rose-300 underline transition-colors"
           >
-            Falar com vendas no WhatsApp
+            Fale com a gente
           </a>
         </div>
       </div>

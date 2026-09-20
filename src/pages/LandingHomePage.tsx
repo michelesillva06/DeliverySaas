@@ -13,10 +13,9 @@ import {
   Sliders,
   TrendingUp,
 } from 'lucide-react';
+import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE, getWhatsAppSupportLink } from '../lib/constants';
 
-const SALES_WHATSAPP_NUMBER = '5592984550000';
-const SALES_WHATSAPP_MESSAGE = encodeURIComponent('Olá! Gostaria de contratar o sistema para o meu estabelecimento.');
-const SALES_WHATSAPP_URL = `https://wa.me/${SALES_WHATSAPP_NUMBER}?text=${SALES_WHATSAPP_MESSAGE}`;
+const SALES_WHATSAPP_URL = getWhatsAppSupportLink(SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE);
 
 export const LandingHomePage: React.FC = () => {
   return (
@@ -30,7 +29,7 @@ export const LandingHomePage: React.FC = () => {
             </div>
             <div>
               <span className="text-xl font-black tracking-tight text-white block leading-none">
-                DeliverySaaS
+                Pede AI
               </span>
               <span className="text-[10px] uppercase font-bold tracking-widest text-neutral-400">
                 Cardápio & Pedidos
@@ -226,7 +225,7 @@ export const LandingHomePage: React.FC = () => {
       {/* Footer */}
       <footer className="border-t border-neutral-900 py-8 bg-neutral-950 text-neutral-500 text-xs text-center">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} DeliverySaaS • Plataforma de Delivery e Cardápio Digital.</p>
+          <p>© {new Date().getFullYear()} Pede AI • Plataforma de Delivery e Cardápio Digital.</p>
           <div className="flex items-center gap-4 text-neutral-400">
             <Link to="/entrar" className="hover:text-white transition-colors">
               Área do Lojista

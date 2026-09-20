@@ -38,6 +38,7 @@ import {
 } from '../../services/firestoreService';
 import { formatCurrency } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
+import { SUPPORT_WHATSAPP } from '../../lib/constants';
 
 export const SuperAdminPage: React.FC = () => {
   const { showToast } = useToast();
@@ -403,7 +404,7 @@ export const SuperAdminPage: React.FC = () => {
             <ShieldAlert className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-black text-base tracking-tight leading-none">Super Admin • DeliverySaaS</h1>
+            <h1 className="font-black text-base tracking-tight leading-none">Super Admin • Pede AI</h1>
             <span className="text-[11px] text-neutral-400">Gestão Global Multi-Lojas e Licenciamento</span>
           </div>
         </div>
@@ -1031,7 +1032,7 @@ export const SuperAdminPage: React.FC = () => {
                       type="text"
                       value={saasConfig.nomeRecebedor || ''}
                       onChange={(e) => setSaasConfig({ ...saasConfig, nomeRecebedor: e.target.value })}
-                      placeholder="DELIVERY SAAS PLATAFORMA"
+                      placeholder="PEDE AI PLATAFORMA"
                       className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 uppercase font-bold"
                     />
                   </div>
@@ -1042,7 +1043,7 @@ export const SuperAdminPage: React.FC = () => {
                       type="text"
                       value={saasConfig.cidade || ''}
                       onChange={(e) => setSaasConfig({ ...saasConfig, cidade: e.target.value })}
-                      placeholder="SAO PAULO"
+                      placeholder="MANAUS"
                       className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 uppercase font-bold"
                     />
                   </div>
@@ -1054,7 +1055,7 @@ export const SuperAdminPage: React.FC = () => {
                     type="text"
                     value={saasConfig.whatsappSuporte}
                     onChange={(e) => setSaasConfig({ ...saasConfig, whatsappSuporte: e.target.value })}
-                    placeholder="5511999998888"
+                    placeholder={SUPPORT_WHATSAPP}
                     className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono"
                   />
                 </div>

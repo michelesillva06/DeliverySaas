@@ -1,0 +1,9 @@
+{
+  "name": "Pede AI",
+  "short_name": "Pede AI",
+  "description": "Plataforma de Delivery e Cardápio Digital",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e11d48"
+}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Search, Utensils, ArrowLeft } from 'lucide-react';
+import { Search, Utensils, ArrowLeft, MessageCircle } from 'lucide-react';
+import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP, getWhatsAppSupportLink } from '../../lib/constants';
 import {
   getStoreBySlugFromFirestore,
   subscribeToStoreBySlug,
@@ -83,13 +84,24 @@ export const StorefrontWrapper: React.FC = () => {
         <p className="text-xs sm:text-sm text-neutral-400 mt-2 max-w-sm">
           Este estabelecimento não está aceitando pedidos no momento. Por favor, tente novamente mais tarde.
         </p>
-        <Link
-          to="/"
-          className="mt-6 px-5 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Página Inicial</span>
-        </Link>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <a
+            href={getWhatsAppSupportLink(SUPPORT_WHATSAPP, 'Olá! Tentei acessar uma loja indisponível na plataforma Pede AI.')}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>Falar com o suporte</span>
+          </a>
+          <Link
+            to="/"
+            className="px-5 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Página Inicial</span>
+          </Link>
+        </div>
       </div>
     );
   }

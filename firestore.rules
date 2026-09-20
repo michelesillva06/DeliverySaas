@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Lojas (Stores)
+    match /stores/{storeId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if true;
+
+      // Subcoleção de Pagamentos da Loja
+      match /pagamentos/{pagamentoId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Solicitações de Confirmação de Pagamento (Lojista -> SuperAdmin)
+    match /saas_payment_requests/{reqId} {
+      allow read, write: if true;
+    }
+
+    // Pagamentos Globais do SaaS
+    match /saas_payments/{paymentId} {
+      allow read, write: if true;
+    }
+
+    // Pedidos (Orders)
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // Cardápio e Configurações
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /option_groups/{groupId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /delivery_zones/{zoneId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /couriers/{courierId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Usuários
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Configuração Global do SaaS
+    match /saas_config/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Coleção de teste de conexão
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

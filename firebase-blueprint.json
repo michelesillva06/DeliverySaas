@@ -1,0 +1,165 @@
+{
+  "entities": {
+    "User": {
+      "path": "users/{userId}",
+      "description": "User profile with role (owner, superadmin, employee)",
+      "fields": {
+        "uid": { "type": "string", "description": "Auth UID" },
+        "email": { "type": "string", "description": "User email" },
+        "nome": { "type": "string", "description": "User full name" },
+        "role": { "type": "string", "description": "owner | superadmin | employee" },
+        "storeId": { "type": "string", "description": "Store ID if owner/employee", "optional": true }
+      }
+    },
+    "Store": {
+      "path": "stores/{storeId}",
+      "description": "Store settings, operational rules, branding and status",
+      "fields": {
+        "id": { "type": "string", "description": "Store identifier" },
+        "nome": { "type": "string", "description": "Store business name" },
+        "slug": { "type": "string", "description": "URL slug for digital menu" },
+        "whatsapp": { "type": "string", "description": "Store WhatsApp number" },
+        "logo": { "type": "string", "description": "Logo URL" },
+        "capa": { "type": "string", "description": "Banner URL" },
+        "status": { "type": "string", "description": "ativa | bloqueada | vencida" },
+        "aberta": { "type": "boolean", "description": "Whether store is currently open" },
+        "nextOrderNumber": { "type": "number", "description": "Sequential order counter" },
+        "plano": { "type": "string", "description": "iniciante | pro | ilimitado | trial" },
+        "planoVenceEm": { "type": "string", "description": "Plan expiration ISO date" },
+        "ownerUid": { "type": "string", "description": "Owner Auth UID" },
+        "criadaEm": { "type": "string", "description": "Creation ISO date" },
+        "descricao": { "type": "string", "description": "Store tagline or description" },
+        "corPrimaria": { "type": "string", "description": "Brand primary hex color" },
+        "endereco": { "type": "string", "description": "Physical address" },
+        "pixKey": { "type": "string", "description": "Pix key for customer payments" },
+        "pixKeyType": { "type": "string", "description": "cpf | cnpj | email | telefone | aleatoria" },
+        "pixReceiverName": { "type": "string", "description": "Receiver name on Pix" },
+        "pixCity": { "type": "string", "description": "City for Pix QR" },
+        "pedidoMinimo": { "type": "number", "description": "Minimum order value" },
+        "tempoEstimadoMin": { "type": "number", "description": "Delivery estimate in minutes" },
+        "tempoEstimadoRetiradaMin": { "type": "number", "description": "Pickup estimate in minutes" },
+        "aceitaEntrega": { "type": "boolean", "description": "Accepts delivery" },
+        "aceitaRetirada": { "type": "boolean", "description": "Accepts pickup" },
+        "soIniciarAposConfirmarPix": { "type": "boolean", "description": "Wait for Pix confirmation before preparing" }
+      }
+    },
+    "Category": {
+      "path": "categories/{categoryId}",
+      "description": "Menu category",
+      "fields": {
+        "id": { "type": "string", "description": "Category ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "nome": { "type": "string", "description": "Category name" },
+        "ordem": { "type": "number", "description": "Display order" },
+        "ativa": { "type": "boolean", "description": "Active flag" }
+      }
+    },
+    "Product": {
+      "path": "products/{productId}",
+      "description": "Menu product item",
+      "fields": {
+        "id": { "type": "string", "description": "Product ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "categoriaId": { "type": "string", "description": "Category ID" },
+        "nome": { "type": "string", "description": "Product name" },
+        "descricao": { "type": "string", "description": "Product description" },
+        "preco": { "type": "number", "description": "Product price" },
+        "precoPromocional": { "type": "number", "description": "Promotional price", "optional": true },
+        "foto": { "type": "string", "description": "Product image URL or data URL" },
+        "disponivel": { "type": "boolean", "description": "Available for ordering" },
+        "ordem": { "type": "number", "description": "Display order" },
+        "optionGroupIds": { "type": "array", "description": "Array of option group IDs" }
+      }
+    },
+    "OptionGroup": {
+      "path": "option_groups/{groupId}",
+      "description": "Product addons / modifier group",
+      "fields": {
+        "id": { "type": "string", "description": "Group ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "nome": { "type": "string", "description": "Group name (e.g., Escolha a Bebida)" },
+        "obrigatorio": { "type": "boolean", "description": "Mandatory selection" },
+        "min": { "type": "number", "description": "Minimum selection count" },
+        "max": { "type": "number", "description": "Maximum selection count" },
+        "itens": { "type": "array", "description": "Array of OptionItem {id, nome, preco, disponivel}" }
+      }
+    },
+    "DeliveryZone": {
+      "path": "delivery_zones/{zoneId}",
+      "description": "Neighborhood delivery fee and estimate",
+      "fields": {
+        "id": { "type": "string", "description": "Zone ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "bairro": { "type": "string", "description": "Neighborhood name" },
+        "taxa": { "type": "number", "description": "Delivery fee" },
+        "tempoMin": { "type": "number", "description": "Estimated delivery time in minutes" },
+        "ativo": { "type": "boolean", "description": "Active flag" }
+      }
+    },
+    "Order": {
+      "path": "orders/{orderId}",
+      "description": "Customer order with status history and payment info",
+      "fields": {
+        "id": { "type": "string", "description": "Order ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "numero": { "type": "number", "description": "Sequential order number for store" },
+        "customerUid": { "type": "string", "description": "Customer anonymous or authenticated UID" },
+        "cliente": { "type": "map", "description": "{nome, telefone}" },
+        "tipo": { "type": "string", "description": "entrega | retirada" },
+        "endereco": { "type": "map", "description": "{rua, numero, bairro, complemento, referencia}", "optional": true },
+        "itens": { "type": "array", "description": "Array of OrderItem snapshot" },
+        "subtotal": { "type": "number", "description": "Subtotal" },
+        "desconto": { "type": "number", "description": "Discount" },
+        "cupom": { "type": "string", "description": "Coupon code used", "optional": true },
+        "taxaEntrega": { "type": "number", "description": "Delivery fee" },
+        "total": { "type": "number", "description": "Total order amount" },
+        "pagamento": { "type": "map", "description": "{forma, status, troco, txid}" },
+        "status": { "type": "string", "description": "novo | aceito | preparo | saiu_entrega | pronto | entregue | cancelado" },
+        "historicoStatus": { "type": "array", "description": "Array of {status, em, nota}" },
+        "tempoEstimadoMin": { "type": "number", "description": "Estimated preparation/delivery time", "optional": true },
+        "motivoCancelamento": { "type": "string", "description": "Cancellation reason", "optional": true },
+        "entregadorId": { "type": "string", "description": "Assigned courier ID", "optional": true },
+        "criadoEm": { "type": "string", "description": "Creation timestamp ISO" },
+        "teste": { "type": "boolean", "description": "Flag for test orders", "optional": true }
+      }
+    },
+    "Courier": {
+      "path": "couriers/{courierId}",
+      "description": "Delivery personnel",
+      "fields": {
+        "id": { "type": "string", "description": "Courier ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "nome": { "type": "string", "description": "Courier name" },
+        "telefone": { "type": "string", "description": "Courier phone" },
+        "taxaEntrega": { "type": "number", "description": "Default delivery fee for courier" },
+        "ativo": { "type": "boolean", "description": "Active flag" }
+      }
+    },
+    "Coupon": {
+      "path": "coupons/{couponId}",
+      "description": "Store promotional discount coupon",
+      "fields": {
+        "id": { "type": "string", "description": "Coupon ID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "codigo": { "type": "string", "description": "Uppercase coupon code" },
+        "tipo": { "type": "string", "description": "fixo | porcentagem" },
+        "valor": { "type": "number", "description": "Discount value" },
+        "pedidoMinimo": { "type": "number", "description": "Minimum order value required" },
+        "usos": { "type": "number", "description": "Usage counter" },
+        "ativo": { "type": "boolean", "description": "Active flag" }
+      }
+    },
+    "SaasConfig": {
+      "path": "saas_config/{configId}",
+      "description": "Platform global configuration and superadmin Pix keys",
+      "fields": {
+        "pixSuperAdmin": { "type": "string", "description": "Platform Pix key" },
+        "pixTipoChave": { "type": "string", "description": "email | telefone | cnpj | cpf | aleatoria" },
+        "nomeRecebedor": { "type": "string", "description": "Pix receiver name" },
+        "cidade": { "type": "string", "description": "Pix city" },
+        "whatsappSuporte": { "type": "string", "description": "Support WhatsApp" },
+        "planos": { "type": "map", "description": "Pricing plans" }
+      }
+    }
+  }
+}

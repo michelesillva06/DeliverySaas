@@ -307,18 +307,33 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-20">
-      {/* Topo */}
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+      {/* Topo do Checkout com Marca da Loja */}
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <Link
             to={`/${store.slug}`}
-            className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors"
+            className="flex items-center gap-2 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors group min-w-0"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Voltar ao Cardápio</span>
+            <ArrowLeft className="w-4 h-4 text-neutral-500 group-hover:text-neutral-900 transition-colors flex-shrink-0" />
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-[10px] text-neutral-500 flex-shrink-0">
+                {store.logo ? (
+                  <img src={store.logo} alt={store.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  store.nome.slice(0, 2).toUpperCase()
+                )}
+              </div>
+              <span className="font-black text-xs text-[#111111] truncate hidden sm:inline max-w-[160px]">
+                {store.nome}
+              </span>
+            </div>
           </Link>
-          <span className="font-bold text-sm text-neutral-900">Finalizar Pedido</span>
-          <span className="w-10" />
+
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold text-xs sm:text-sm text-[#111111] bg-neutral-100 px-3 py-1.5 rounded-xl border border-neutral-200/80">
+              Finalizar Pedido
+            </span>
+          </div>
         </div>
       </header>
 

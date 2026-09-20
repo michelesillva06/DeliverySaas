@@ -165,23 +165,39 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
       {/* Elemento oculto para impressão térmica se necessário */}
       <ThermalReceipt order={order} store={store} />
 
-      {/* Topo */}
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30">
-        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      {/* Topo do Acompanhamento */}
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <Link
             to={`/${store.slug}`}
-            className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors"
+            className="flex items-center gap-2 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors group min-w-0"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Cardápio</span>
+            <ArrowLeft className="w-4 h-4 text-neutral-500 group-hover:text-neutral-900 transition-colors flex-shrink-0" />
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-[10px] text-neutral-500 flex-shrink-0">
+                {store.logo ? (
+                  <img src={store.logo} alt={store.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  store.nome.slice(0, 2).toUpperCase()
+                )}
+              </div>
+              <span className="font-black text-xs text-[#111111] truncate hidden sm:inline max-w-[150px]">
+                {store.nome}
+              </span>
+            </div>
           </Link>
-          <span className="font-bold text-sm text-neutral-900">Acompanhar Pedido #{order.numero}</span>
+
+          <span className="font-black text-xs sm:text-sm text-[#111111]">
+            Pedido #{order.numero}
+          </span>
+
           <button
+            type="button"
             onClick={handleOpenWhatsApp}
-            className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg flex items-center gap-1 hover:bg-emerald-100 transition-colors cursor-pointer"
+            className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200/80 flex items-center gap-1.5 hover:bg-emerald-100 transition-colors cursor-pointer"
           >
-            <MessageCircle className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Ajuda</span>
+            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Suporte</span>
           </button>
         </div>
       </header>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Search, Utensils, ArrowLeft, MessageCircle } from 'lucide-react';
 import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_HELP, getWhatsAppSupportLink } from '../../lib/constants';
+import { isStoreOpen, generateWhatsAppUrl } from '../../lib/formatters';
 import {
   getStoreBySlugFromFirestore,
   subscribeToStoreBySlug,
@@ -125,6 +126,17 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  const openStatus = useMemo(() => isStoreOpen(store), [store]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 180);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     document.title = `${store.nome} | Cardápio Digital - Pede AI`;
@@ -192,9 +204,52 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
       {/* Cabeçalho da Loja com Capa e Logo */}
       <CustomerHeader store={store} />
 
-      {/* Barra de Busca e Navegação por Categorias */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-neutral-200 shadow-xs">
+      {/* Barra de Busca e Navegação por Categorias (Sticky) */}
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-neutral-200 shadow-xs transition-all">
         <div className="max-w-4xl mx-auto px-4 py-2.5 space-y-2.5">
+          {/* Versão Compacta do Cabeçalho (aparece ao rolar a página) */}
+          {isScrolled && (
+            <div className="flex items-center justify-between gap-3 pb-2 border-b border-neutral-100 animate-fadeIn">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-white border border-neutral-200 overflow-hidden flex-shrink-0 flex items-center justify-center font-bold text-neutral-400 text-xs shadow-2xs">
+                  {store.logo ? (
+                    <img
+                      src={store.logo}
+                      alt={store.nome}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    store.nome.slice(0, 2).toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xs sm:text-sm font-black text-[#111111] truncate leading-tight">
+                    {store.nome}
+                  </h2>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${openStatus.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                    <span className="text-[10px] font-bold text-neutral-500">
+                      {openStatus.isOpen ? 'Aberta' : 'Fechada'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {store.whatsapp && (
+                <a
+                  href={generateWhatsAppUrl(store.whatsapp, `Olá! Gostaria de tirar uma dúvida sobre o cardápio.`)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5 flex-shrink-0"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-white" />
+                  <span className="hidden sm:inline">WhatsApp</span>
+                </a>
+              )}
+            </div>
+          )}
+
           {/* Busca */}
           <div className="relative">
             <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />

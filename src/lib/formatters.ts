@@ -1,5 +1,3 @@
-import { Store } from '../types';
-
 /**
  * Formata um número para Moeda Real (BRL)
  */
@@ -68,11 +66,128 @@ export function formatTime(dateStr: string): string {
   }).format(date);
 }
 
+import { Store, DayHours, TimePeriod } from '../types';
+
+export const DIAS_DA_SEMANA = [
+  { dia: 1, nomeDia: 'Segunda-feira', nomeCurto: 'Seg' },
+  { dia: 2, nomeDia: 'Terça-feira', nomeCurto: 'Ter' },
+  { dia: 3, nomeDia: 'Quarta-feira', nomeCurto: 'Qua' },
+  { dia: 4, nomeDia: 'Quinta-feira', nomeCurto: 'Qui' },
+  { dia: 5, nomeDia: 'Sexta-feira', nomeCurto: 'Sex' },
+  { dia: 6, nomeDia: 'Sábado', nomeCurto: 'Sáb' },
+  { dia: 0, nomeDia: 'Domingo', nomeCurto: 'Dom' },
+];
+
+export function getDefaultHorarios(): DayHours[] {
+  return DIAS_DA_SEMANA.map((d) => ({
+    dia: d.dia,
+    nomeDia: d.nomeDia,
+    ativo: true,
+    abertura: '10:00',
+    fechamento: '22:00',
+    periodos: [{ abertura: '10:00', fechamento: '22:00' }],
+  }));
+}
+
+export function normalizeHorarios(horarios?: DayHours[]): DayHours[] {
+  const defaults = getDefaultHorarios();
+  if (!horarios || !Array.isArray(horarios) || horarios.length === 0) {
+    return defaults;
+  }
+
+  return DIAS_DA_SEMANA.map((d) => {
+    const existing = horarios.find((h) => h.dia === d.dia);
+    if (!existing) {
+      return {
+        dia: d.dia,
+        nomeDia: d.nomeDia,
+        ativo: true,
+        abertura: '10:00',
+        fechamento: '22:00',
+        periodos: [{ abertura: '10:00', fechamento: '22:00' }],
+      };
+    }
+
+    let periodos: TimePeriod[] = [];
+    if (Array.isArray(existing.periodos) && existing.periodos.length > 0) {
+      periodos = existing.periodos.map((p) => ({
+        abertura: p.abertura || '10:00',
+        fechamento: p.fechamento || '22:00',
+      }));
+    } else {
+      periodos = [
+        {
+          abertura: existing.abertura || '10:00',
+          fechamento: existing.fechamento || '22:00',
+        },
+      ];
+    }
+
+    return {
+      dia: existing.dia,
+      nomeDia: existing.nomeDia || d.nomeDia,
+      ativo: existing.ativo ?? true,
+      abertura: periodos[0]?.abertura || '10:00',
+      fechamento: periodos[0]?.fechamento || '22:00',
+      periodos,
+    };
+  });
+}
+
+export function getManausNow(): Date {
+  const now = new Date();
+  try {
+    const manausStr = now.toLocaleString('en-US', { timeZone: 'America/Manaus' });
+    return new Date(manausStr);
+  } catch (e) {
+    return now;
+  }
+}
+
+export function getNextOpeningText(horarios: DayHours[], now: Date = getManausNow()): string {
+  const currentDay = now.getDay();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  for (let offset = 0; offset < 7; offset++) {
+    const dayIndex = (currentDay + offset) % 7;
+    const dayHours = horarios.find((h) => h.dia === dayIndex);
+
+    if (!dayHours || !dayHours.ativo || !dayHours.periodos || dayHours.periodos.length === 0) {
+      continue;
+    }
+
+    const sortedPeriods = [...dayHours.periodos].sort((a, b) => {
+      const [hA, mA] = a.abertura.split(':').map(Number);
+      const [hB, mB] = b.abertura.split(':').map(Number);
+      return hA * 60 + mA - (hB * 60 + mB);
+    });
+
+    for (const p of sortedPeriods) {
+      const [hA, mA] = p.abertura.split(':').map(Number);
+      const minAb = hA * 60 + mA;
+
+      if (offset === 0) {
+        if (minAb > currentMinutes) {
+          return `abre hoje às ${p.abertura}`;
+        }
+      } else if (offset === 1) {
+        return `abre amanhã às ${p.abertura}`;
+      } else {
+        const dayInfo = DIAS_DA_SEMANA.find((d) => d.dia === dayIndex);
+        const dayName = dayInfo ? dayInfo.nomeDia.toLowerCase() : 'em breve';
+        return `abre ${dayName} às ${p.abertura}`;
+      }
+    }
+  }
+
+  return 'Sem horários cadastrados';
+}
+
 /**
  * Calcula se a loja está aberta respeitando:
  * 1. Status da loja (não pode estar bloqueada nem vencida)
  * 2. Botão manual "aberta" (se falso, loja fechada imediatamente)
- * 3. Horários configurados por dia da semana
+ * 3. Horários configurados por dia da semana (fuso America/Manaus)
  */
 export function isStoreOpen(store: Store): { isOpen: boolean; reason?: string } {
   if (store.status === 'bloqueada') {
@@ -82,46 +197,76 @@ export function isStoreOpen(store: Store): { isOpen: boolean; reason?: string } 
     return { isOpen: false, reason: 'Assinatura da loja indisponível no momento.' };
   }
   if (!store.aberta) {
-    return { isOpen: false, reason: 'Fechada no momento (pausa do lojista).' };
+    return { isOpen: false, reason: 'Fechada no momento (pausa manual do lojista).' };
   }
 
-  // Verificar horários semanais
-  if (!store.horarios || store.horarios.length === 0) {
-    return { isOpen: true }; // Sem horários fixos, segue a chave manual
-  }
+  const horarios = normalizeHorarios(store.horarios);
+  const manausNow = getManausNow();
+  const currentDay = manausNow.getDay(); // 0 = Dom, 1 = Seg ... 6 = Sáb
+  const currentMinutes = manausNow.getHours() * 60 + manausNow.getMinutes();
 
-  // Obter dia da semana atual e hora atual (fuso configurável / local)
-  const now = new Date();
-  const diaSemana = now.getDay(); // 0 = Domingo, 1 = Segunda...
-  const horarioHoje = store.horarios.find((h) => h.dia === diaSemana);
+  // 1. Checar horários do dia atual
+  const todayHours = horarios.find((h) => h.dia === currentDay);
+  if (todayHours && todayHours.ativo) {
+    for (const p of todayHours.periodos || []) {
+      const [hA, mA] = (p.abertura || '00:00').split(':').map(Number);
+      const [hF, mF] = (p.fechamento || '23:59').split(':').map(Number);
+      const minAb = hA * 60 + mA;
+      const minFe = hF * 60 + mF;
 
-  if (!horarioHoje || !horarioHoje.ativo) {
-    return { isOpen: false, reason: 'Fechada hoje de acordo com os horários de funcionamento.' };
-  }
-
-  // Checar faixa de horário (formato "HH:mm")
-  const horaAtual = now.getHours() * 60 + now.getMinutes();
-  const [horaAb, minAb] = (horarioHoje.abertura || '00:00').split(':').map(Number);
-  const [horaFe, minFe] = (horarioHoje.fechamento || '23:59').split(':').map(Number);
-  
-  const minutosAbertura = horaAb * 60 + minAb;
-  const minutosFechamento = horaFe * 60 + minFe;
-
-  // Lidar com horários que viram a noite (ex: 18:00 até 02:00)
-  if (minutosFechamento < minutosAbertura) {
-    if (horaAtual >= minutosAbertura || horaAtual <= minutosFechamento) {
-      return { isOpen: true };
-    }
-  } else {
-    if (horaAtual >= minutosAbertura && horaAtual <= minutosFechamento) {
-      return { isOpen: true };
+      if (minFe > minAb) {
+        if (currentMinutes >= minAb && currentMinutes <= minFe) {
+          return { isOpen: true };
+        }
+      } else if (minFe < minAb) {
+        // Virada da noite
+        if (currentMinutes >= minAb) {
+          return { isOpen: true };
+        }
+      } else {
+        if (minAb === 0 && minFe === 1439) return { isOpen: true };
+      }
     }
   }
 
+  // 2. Checar horários que viraram a noite a partir de ONTEM
+  const yesterdayDay = (currentDay + 6) % 7;
+  const yesterdayHours = horarios.find((h) => h.dia === yesterdayDay);
+  if (yesterdayHours && yesterdayHours.ativo) {
+    for (const p of yesterdayHours.periodos || []) {
+      const [hA, mA] = (p.abertura || '00:00').split(':').map(Number);
+      const [hF, mF] = (p.fechamento || '23:59').split(':').map(Number);
+      const minAb = hA * 60 + mA;
+      const minFe = hF * 60 + mF;
+
+      if (minFe < minAb) {
+        if (currentMinutes <= minFe) {
+          return { isOpen: true };
+        }
+      }
+    }
+  }
+
+  const nextOpening = getNextOpeningText(horarios, manausNow);
   return {
     isOpen: false,
-    reason: `Fechada no momento. Horário hoje: ${horarioHoje.abertura} às ${horarioHoje.fechamento}`,
+    reason: `Fechada no momento (${nextOpening}).`,
   };
+}
+
+export function getStoreCurrentStatusText(store: Store): string {
+  if (store.status === 'bloqueada') return 'Agora: FECHADA (loja suspensa)';
+  if (store.status === 'vencida') return 'Agora: FECHADA (assinatura vencida)';
+  if (!store.aberta) return 'Agora: FECHADA (pausa manual ativada)';
+
+  const openRes = isStoreOpen(store);
+  if (openRes.isOpen) {
+    return 'Agora: ABERTA';
+  }
+
+  const horarios = normalizeHorarios(store.horarios);
+  const nextOpening = getNextOpeningText(horarios);
+  return `Agora: FECHADA (${nextOpening})`;
 }
 
 /**

@@ -41,7 +41,7 @@ import {
   updateSaasPaymentRequestStatusInFirestore,
   subscribeToStorePayments,
 } from '../../services/firestoreService';
-import { formatCurrency } from '../../lib/formatters';
+import { formatCurrency, getDefaultHorarios } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { SUPPORT_WHATSAPP } from '../../lib/constants';
 import { useActiveStore } from '../../services/activeStoreContext';
@@ -245,7 +245,7 @@ export const SuperAdminPage: React.FC = () => {
           cartaoEntrega: true,
           whatsapp: true,
         },
-        horarios: [],
+        horarios: getDefaultHorarios(),
         aberta: true,
         pedidoMinimo: 0,
         tempoEstimadoMin: 30,

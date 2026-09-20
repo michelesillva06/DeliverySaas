@@ -1,11 +1,17 @@
 export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
 
+export interface TimePeriod {
+  abertura: string; // "10:00"
+  fechamento: string; // "22:00"
+}
+
 export interface DayHours {
   dia: number; // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
   nomeDia: string;
   ativo: boolean;
-  abertura: string; // "18:00"
-  fechamento: string; // "23:30"
+  abertura?: string; // Fallback / single period
+  fechamento?: string; // Fallback / single period
+  periodos?: TimePeriod[]; // Array of up to 3 periods
 }
 
 export interface StorePaymentMethods {

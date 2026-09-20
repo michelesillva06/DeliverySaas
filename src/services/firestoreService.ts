@@ -20,6 +20,7 @@ import { db, auth } from '../lib/firebase';
 import { SUPPORT_WHATSAPP } from '../lib/constants';
 import {
   Store,
+  DayHours,
   Category,
   Product,
   OptionGroup,
@@ -174,6 +175,15 @@ export const saveStoreInFirestore = saveStoreToFirestore;
 export async function updateStoreStatusInFirestore(storeId: string, aberta: boolean): Promise<void> {
   const docRef = doc(db, 'stores', storeId);
   await updateDoc(docRef, { aberta });
+}
+
+export async function updateStoreHorariosInFirestore(
+  storeId: string,
+  horarios: DayHours[],
+  aberta: boolean
+): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  await updateDoc(docRef, { horarios, aberta });
 }
 
 // ==========================================

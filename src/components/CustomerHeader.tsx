@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Clock, MessageCircle, AlertCircle, X, ChevronDown, ChevronUp, Bike, ShoppingBag, DollarSign } from 'lucide-react';
 import { Store } from '../types';
-import { isStoreOpen, formatCurrency, generateWhatsAppUrl } from '../lib/formatters';
+import { isStoreOpen, formatCurrency, generateWhatsAppUrl, normalizeHorarios } from '../lib/formatters';
 
 interface CustomerHeaderProps {
   store: Store;
@@ -193,8 +193,14 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({ store }) => {
             </div>
 
             <div className="space-y-1.5 text-xs">
-              {store.horarios?.map((h) => {
+              {normalizeHorarios(store.horarios).map((h) => {
                 const isToday = new Date().getDay() === h.dia;
+                const hoursFormatted = h.ativo
+                  ? h.periodos && h.periodos.length > 0
+                    ? h.periodos.map((p) => `${p.abertura} às ${p.fechamento}`).join(' • ')
+                    : `${h.abertura} às ${h.fechamento}`
+                  : 'Fechado';
+
                 return (
                   <div
                     key={h.dia}
@@ -205,8 +211,8 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({ store }) => {
                     <span>
                       {h.nomeDia} {isToday && '(Hoje)'}
                     </span>
-                    <span className={isToday ? 'text-emerald-400 font-extrabold' : 'font-semibold'}>
-                      {h.ativo ? `${h.abertura} às ${h.fechamento}` : 'Fechado'}
+                    <span className={isToday ? 'text-emerald-400 font-extrabold text-right' : 'font-semibold text-right'}>
+                      {hoursFormatted}
                     </span>
                   </div>
                 );

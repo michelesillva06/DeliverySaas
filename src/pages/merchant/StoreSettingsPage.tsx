@@ -13,6 +13,11 @@ import {
   Printer,
   Copy,
   Loader2,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+  XCircle,
 } from 'lucide-react';
 import { Store, DeliveryZone, DayHours } from '../../types';
 import {
@@ -20,11 +25,87 @@ import {
   subscribeToDeliveryZonesByStore,
   createDeliveryZoneInFirestore,
   deleteDeliveryZoneInFirestore,
+  updateStoreHorariosInFirestore,
 } from '../../services/firestoreService';
-import { formatCurrency } from '../../lib/formatters';
+import {
+  formatCurrency,
+  normalizeHorarios,
+  getStoreCurrentStatusText,
+  isStoreOpen,
+} from '../../lib/formatters';
 import { gerarQrCodeDataUrl } from '../../lib/pix';
 import { ImageUploader } from '../../components/ImageUploader';
 import { useToast } from '../../components/Toast';
+
+/**
+ * Valida os períodos de funcionamento de um dia:
+ * 1. Fechamento !== Abertura
+ * 2. Sem sobreposição de períodos
+ */
+function validateDayHours(day: DayHours): string[] {
+  const errors: string[] = [];
+  if (!day.ativo || !day.periodos || day.periodos.length === 0) {
+    return errors;
+  }
+
+  for (let i = 0; i < day.periodos.length; i++) {
+    const p = day.periodos[i];
+    if (p.abertura && p.fechamento && p.abertura === p.fechamento) {
+      errors.push(`Período ${i + 1}: O horário de fechamento (${p.fechamento}) não pode ser igual ao de abertura (${p.abertura}).`);
+    }
+  }
+
+  if (day.periodos.length > 1) {
+    const minutesCovered = new Uint8Array(1440);
+    let overlapFound = false;
+
+    for (const p of day.periodos) {
+      if (!p.abertura || !p.fechamento) continue;
+      const [hA, mA] = p.abertura.split(':').map(Number);
+      const [hF, mF] = p.fechamento.split(':').map(Number);
+      if (isNaN(hA) || isNaN(mA) || isNaN(hF) || isNaN(mF)) continue;
+
+      const start = hA * 60 + mA;
+      const end = hF * 60 + mF;
+
+      if (start === end) continue;
+
+      if (end > start) {
+        for (let m = start; m < end; m++) {
+          if (minutesCovered[m]) {
+            overlapFound = true;
+            break;
+          }
+          minutesCovered[m] = 1;
+        }
+      } else {
+        // Virada da noite
+        for (let m = start; m < 1440; m++) {
+          if (minutesCovered[m]) {
+            overlapFound = true;
+            break;
+          }
+          minutesCovered[m] = 1;
+        }
+        for (let m = 0; m < end; m++) {
+          if (minutesCovered[m]) {
+            overlapFound = true;
+            break;
+          }
+          minutesCovered[m] = 1;
+        }
+      }
+
+      if (overlapFound) break;
+    }
+
+    if (overlapFound) {
+      errors.push('Existem períodos com horários sobrepostos neste dia.');
+    }
+  }
+
+  return errors;
+}
 
 export const StoreSettingsPage: React.FC = () => {
   const { store } = useOutletContext<{ store: Store }>();
@@ -44,21 +125,173 @@ export const StoreSettingsPage: React.FC = () => {
   const [newTempo, setNewTempo] = useState('40');
 
   useEffect(() => {
-    setFormData(store);
+    if (store) {
+      setFormData({
+        ...store,
+        horarios: normalizeHorarios(store.horarios),
+      });
+    }
   }, [store]);
 
-  useEffect(() => {
-    const unsub = subscribeToDeliveryZonesByStore(store.id, (zones) => {
-      setDeliveryZones(zones);
-    });
-    return unsub;
-  }, [store.id]);
+  // Checar se há alterações pendentes nos horários
+  const normalizedInitialHorarios = normalizeHorarios(store.horarios);
+  const isHoursDirty =
+    JSON.stringify(formData.horarios) !== JSON.stringify(normalizedInitialHorarios) ||
+    formData.aberta !== store.aberta;
+
+  // Erros de validação
+  const allScheduleErrors = (formData.horarios || []).flatMap((h) => {
+    if (!h.ativo) return [];
+    return validateDayHours(h).map((msg) => `${h.nomeDia}: ${msg}`);
+  });
+  const hasValidationErrors = allScheduleErrors.length > 0;
 
   useEffect(() => {
-    // Gerar QR Code do Cardápio para a aba QR Code
-    const storeUrl = `${window.location.origin}/#/${store.slug}`;
-    gerarQrCodeDataUrl(storeUrl).then(setStoreQrCodeUrl);
-  }, [store.slug]);
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isHoursDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isHoursDirty]);
+
+  // Atalhos de Horário
+  const handleCopyMondayToAll = () => {
+    const monday = formData.horarios.find((h) => h.dia === 1);
+    if (!monday) return;
+    const periodosCopy = (monday.periodos || []).map((p) => ({ ...p }));
+    const updated = formData.horarios.map((h) => ({
+      ...h,
+      ativo: monday.ativo,
+      periodos: periodosCopy.map((p) => ({ ...p })),
+      abertura: periodosCopy[0]?.abertura || '10:00',
+      fechamento: periodosCopy[0]?.fechamento || '22:00',
+    }));
+    setFormData({ ...formData, horarios: updated });
+    showToast('Horários de Segunda-feira copiados para todos os dias!', 'info');
+  };
+
+  const handleCopyMondayToWeekdays = () => {
+    const monday = formData.horarios.find((h) => h.dia === 1);
+    if (!monday) return;
+    const periodosCopy = (monday.periodos || []).map((p) => ({ ...p }));
+    const updated = formData.horarios.map((h) => {
+      if (h.dia >= 1 && h.dia <= 5) {
+        return {
+          ...h,
+          ativo: monday.ativo,
+          periodos: periodosCopy.map((p) => ({ ...p })),
+          abertura: periodosCopy[0]?.abertura || '10:00',
+          fechamento: periodosCopy[0]?.fechamento || '22:00',
+        };
+      }
+      return h;
+    });
+    setFormData({ ...formData, horarios: updated });
+    showToast('Horários de Segunda copiados para Dias Úteis (2ª a 6ª)!', 'info');
+  };
+
+  const handleSetOpen24Hours = () => {
+    const updated = formData.horarios.map((h) => ({
+      ...h,
+      ativo: true,
+      periodos: [{ abertura: '00:00', fechamento: '23:59' }],
+      abertura: '00:00',
+      fechamento: '23:59',
+    }));
+    setFormData({ ...formData, horarios: updated });
+    showToast('Todos os dias configurados para 24 horas!', 'info');
+  };
+
+  const handleCloseAllDays = () => {
+    const updated = formData.horarios.map((h) => ({
+      ...h,
+      ativo: false,
+    }));
+    setFormData({ ...formData, horarios: updated });
+    showToast('Todos os dias marcados como Fechado.', 'info');
+  };
+
+  const handleToggleDayActive = (dia: number, ativo: boolean) => {
+    const updated = formData.horarios.map((h) => {
+      if (h.dia === dia) {
+        return { ...h, ativo };
+      }
+      return h;
+    });
+    setFormData({ ...formData, horarios: updated });
+  };
+
+  const handleUpdatePeriod = (dia: number, pIndex: number, field: 'abertura' | 'fechamento', value: string) => {
+    const updated = formData.horarios.map((h) => {
+      if (h.dia === dia) {
+        const periodos = [...(h.periodos || [])];
+        if (periodos[pIndex]) {
+          periodos[pIndex] = { ...periodos[pIndex], [field]: value };
+        }
+        return {
+          ...h,
+          periodos,
+          abertura: periodos[0]?.abertura || h.abertura,
+          fechamento: periodos[0]?.fechamento || h.fechamento,
+        };
+      }
+      return h;
+    });
+    setFormData({ ...formData, horarios: updated });
+  };
+
+  const handleAddPeriod = (dia: number) => {
+    const updated = formData.horarios.map((h) => {
+      if (h.dia === dia) {
+        const periodos = [...(h.periodos || [])];
+        if (periodos.length < 3) {
+          const lastP = periodos[periodos.length - 1];
+          const defaultStart = lastP ? lastP.fechamento : '18:00';
+          periodos.push({ abertura: defaultStart, fechamento: '23:00' });
+        }
+        return { ...h, periodos };
+      }
+      return h;
+    });
+    setFormData({ ...formData, horarios: updated });
+  };
+
+  const handleRemovePeriod = (dia: number, pIndex: number) => {
+    const updated = formData.horarios.map((h) => {
+      if (h.dia === dia) {
+        const periodos = (h.periodos || []).filter((_, idx) => idx !== pIndex);
+        return {
+          ...h,
+          periodos,
+          abertura: periodos[0]?.abertura || '10:00',
+          fechamento: periodos[0]?.fechamento || '22:00',
+        };
+      }
+      return h;
+    });
+    setFormData({ ...formData, horarios: updated });
+  };
+
+  const handleSaveHours = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hasValidationErrors) {
+      showToast('Por favor, corrija os erros nos horários antes de salvar.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateStoreHorariosInFirestore(store.id, formData.horarios, formData.aberta);
+      showToast('Horários de funcionamento salvos com sucesso!', 'success');
+    } catch (err: any) {
+      console.error('Erro ao salvar horários:', err);
+      showToast(err?.message || 'Erro ao salvar no Firestore. Tente novamente.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,16 +305,6 @@ export const StoreSettingsPage: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleUpdateHours = (dia: number, field: keyof DayHours, val: any) => {
-    const updatedHorarios = (formData.horarios || []).map((h) => {
-      if (h.dia === dia) {
-        return { ...h, [field]: val };
-      }
-      return h;
-    });
-    setFormData({ ...formData, horarios: updatedHorarios });
   };
 
   const handleAddZone = async (e: React.FormEvent) => {
@@ -319,57 +542,267 @@ export const StoreSettingsPage: React.FC = () => {
 
       {/* ABA 2: HORÁRIOS DE FUNCIONAMENTO */}
       {activeTab === 'horarios' && (
-        <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
-          <p className="text-xs text-neutral-600">
-            A loja só aceitará pedidos nos dias e horários configurados como abertos (a menos que a pausa manual esteja ativada).
-          </p>
-
-          <div className="space-y-2 divide-y divide-neutral-100 text-xs">
-            {formData.horarios?.map((h) => (
-              <div key={h.dia} className="pt-2 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2 w-36">
-                  <input
-                    type="checkbox"
-                    checked={h.ativo}
-                    onChange={(e) => handleUpdateHours(h.dia, 'ativo', e.target.checked)}
-                    className="rounded border-neutral-300 text-neutral-900"
-                  />
-                  <span className={`font-bold ${h.ativo ? 'text-neutral-900' : 'text-neutral-400'}`}>
-                    {h.nomeDia}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-neutral-500">Abertura:</span>
-                  <input
-                    type="time"
-                    disabled={!h.ativo}
-                    value={h.abertura}
-                    onChange={(e) => handleUpdateHours(h.dia, 'abertura', e.target.value)}
-                    className="p-2 border border-neutral-200 rounded-lg text-xs disabled:opacity-40"
-                  />
-                  <span className="text-neutral-500">às</span>
-                  <input
-                    type="time"
-                    disabled={!h.ativo}
-                    value={h.fechamento}
-                    onChange={(e) => handleUpdateHours(h.dia, 'fechamento', e.target.value)}
-                    className="p-2 border border-neutral-200 rounded-lg text-xs disabled:opacity-40"
-                  />
+        <form onSubmit={handleSaveHours} className="space-y-5 w-full max-w-full min-w-0">
+          
+          {/* BANNER 1: STATUS DA LOJA EM DESTAQUE (Fuso America/Manaus) */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1 min-w-0">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-400 block">
+                  Status Operacional em Tempo Real (Fuso Manaus)
+                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div
+                    className={`px-3.5 py-1.5 rounded-full font-black text-xs sm:text-sm flex items-center gap-2 shadow-2xs ${
+                      isStoreOpen(formData).isOpen
+                        ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                        : 'bg-rose-100 text-rose-900 border border-rose-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        isStoreOpen(formData).isOpen ? 'bg-emerald-600 animate-pulse' : 'bg-rose-600'
+                      }`}
+                    />
+                    <span>{getStoreCurrentStatusText(formData)}</span>
+                  </div>
                 </div>
               </div>
-            ))}
+
+              {/* INTERRUPTOR DE PAUSA MANUAL */}
+              <div className="flex items-center gap-3 bg-neutral-50 p-3 rounded-xl border border-neutral-200/80 flex-shrink-0">
+                <div className="text-right sm:text-left">
+                  <span className="text-xs font-bold text-neutral-900 block leading-tight">
+                    Pausar pedidos agora
+                  </span>
+                  <span className="text-[10px] text-neutral-500 font-medium">
+                    {!formData.aberta ? 'Pausa ativada (Loja Fechada)' : 'Pausa desativada (Segue horários)'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={!formData.aberta}
+                    onChange={(e) => setFormData({ ...formData, aberta: !e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600" />
+                </label>
+              </div>
+            </div>
+
+            {/* Aviso de Pausa Manual Ativada */}
+            {!formData.aberta && (
+              <div className="p-3 bg-amber-50 border border-amber-200/90 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Atenção:</strong> A pausa manual sobressai aos horários fixos. Enquanto estiver ativada, a loja ficará fechada para os clientes no aplicativo.
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="flex justify-end pt-3 border-t border-neutral-100">
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{saving ? 'Gravando no Firestore...' : 'Salvar Horários'}</span>
-            </button>
+          {/* BANNER 2: ATALHOS RÁPIDOS */}
+          <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-neutral-500" />
+                Atalhos de Configuração Rápida
+              </span>
+              <span className="text-[10px] text-neutral-400 font-medium">Aplicação em lote</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={handleCopyMondayToAll}
+                className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-[11px] font-bold text-neutral-700 transition-colors flex items-center justify-center gap-1.5 text-center cursor-pointer"
+              >
+                <Copy className="w-3 h-3 text-neutral-500 flex-shrink-0" />
+                <span>Copiar 2ª para Todos</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyMondayToWeekdays}
+                className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-[11px] font-bold text-neutral-700 transition-colors flex items-center justify-center gap-1.5 text-center cursor-pointer"
+              >
+                <Copy className="w-3 h-3 text-neutral-500 flex-shrink-0" />
+                <span>Copiar para Dias Úteis</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSetOpen24Hours}
+                className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-[11px] font-bold text-neutral-700 transition-colors flex items-center justify-center gap-1.5 text-center cursor-pointer"
+              >
+                <Clock className="w-3 h-3 text-neutral-500 flex-shrink-0" />
+                <span>Abrir 24 Horas</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCloseAllDays}
+                className="p-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl text-[11px] font-bold text-rose-700 transition-colors flex items-center justify-center gap-1.5 text-center cursor-pointer"
+              >
+                <XCircle className="w-3 h-3 text-rose-500 flex-shrink-0" />
+                <span>Fechar Todos os Dias</span>
+              </button>
+            </div>
+          </div>
+
+          {/* LISTA DE DIAS DA SEMANA */}
+          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-neutral-900">Horários Semanais</h3>
+                <p className="text-[11px] text-neutral-500">
+                  Configure até 3 períodos de funcionamento para cada dia da semana.
+                </p>
+              </div>
+              {isHoursDirty && (
+                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Alterações não salvas
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {formData.horarios.map((h) => {
+                const dayErrors = validateDayHours(h);
+                const hasError = dayErrors.length > 0;
+
+                return (
+                  <div
+                    key={h.dia}
+                    className={`p-3.5 sm:p-4 rounded-xl border transition-colors ${
+                      hasError
+                        ? 'border-rose-300 bg-rose-50/30'
+                        : h.ativo
+                        ? 'border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50'
+                        : 'border-neutral-200 bg-neutral-100/40 opacity-75'
+                    }`}
+                  >
+                    {/* Linha Principal do Dia */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      {/* Nome do Dia e Switch */}
+                      <div className="flex items-center justify-between sm:justify-start gap-3 min-w-[150px]">
+                        <span className={`font-black text-xs sm:text-sm ${h.ativo ? 'text-neutral-900' : 'text-neutral-400'}`}>
+                          {h.nomeDia}
+                        </span>
+
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={h.ativo}
+                            onChange={(e) => handleToggleDayActive(h.dia, e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:translate-x-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600" />
+                          <span className="ml-2 text-[11px] font-bold text-neutral-600">
+                            {h.ativo ? 'Aberto' : 'Fechado'}
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Lista de Períodos se estiver Aberto */}
+                      {h.ativo && (
+                        <div className="flex-1 space-y-2">
+                          {h.periodos?.map((p, pIdx) => (
+                            <div key={pIdx} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                              <span className="text-[11px] font-bold text-neutral-400 min-w-[55px]">
+                                Período {pIdx + 1}:
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                                <input
+                                  type="time"
+                                  value={p.abertura}
+                                  onChange={(e) => handleUpdatePeriod(h.dia, pIdx, 'abertura', e.target.value)}
+                                  className="p-1.5 sm:p-2 border border-neutral-300 rounded-lg text-xs font-bold text-neutral-900 bg-white focus:ring-2 focus:ring-neutral-900"
+                                />
+                                <span className="text-xs font-bold text-neutral-400">às</span>
+                                <input
+                                  type="time"
+                                  value={p.fechamento}
+                                  onChange={(e) => handleUpdatePeriod(h.dia, pIdx, 'fechamento', e.target.value)}
+                                  className="p-1.5 sm:p-2 border border-neutral-300 rounded-lg text-xs font-bold text-neutral-900 bg-white focus:ring-2 focus:ring-neutral-900"
+                                />
+
+                                {(h.periodos?.length || 0) > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemovePeriod(h.dia, pIdx)}
+                                    title="Remover período"
+                                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Botão para adicionar outro período */}
+                          {(h.periodos?.length || 0) < 3 && (
+                            <button
+                              type="button"
+                              onClick={() => handleAddPeriod(h.dia)}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-700 hover:text-neutral-900 hover:underline pt-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3 text-neutral-500" />
+                              <span>+ Adicionar outro período</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Mensagens de Erro por Dia */}
+                    {hasError && (
+                      <div className="mt-2.5 pt-2 border-t border-rose-200/60 space-y-1">
+                        {dayErrors.map((err, errIdx) => (
+                          <p key={errIdx} className="text-xs font-bold text-rose-600 flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>{err}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* BOTÃO FIXO NO RODAPÉ / FINAL DA ABA */}
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md pt-3 pb-2 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3 z-10">
+              <div className="text-xs text-neutral-500">
+                {hasValidationErrors ? (
+                  <span className="text-rose-600 font-bold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Existem erros de validação nos horários.
+                  </span>
+                ) : isHoursDirty ? (
+                  <span className="text-amber-700 font-bold">
+                    Você possui alterações pendentes de salvamento.
+                  </span>
+                ) : (
+                  <span className="text-emerald-600 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Horários sincronizados com o Firestore.
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving || !isHoursDirty || hasValidationErrors}
+                className="w-full sm:w-auto px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{saving ? 'Gravando no Firestore...' : 'Salvar Horários'}</span>
+              </button>
+            </div>
           </div>
         </form>
       )}

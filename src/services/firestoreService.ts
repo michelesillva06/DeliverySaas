@@ -340,6 +340,9 @@ export async function updateOrderStatusInFirestore(
   if (tempoEstimadoMin !== undefined) {
     updateData.tempoEstimadoMin = tempoEstimadoMin;
   }
+  if (newStatus === 'aceito' && !order.impressoAutomaticamenteEm) {
+    updateData.impressoAutomaticamenteEm = new Date().toISOString();
+  }
   if (newStatus === 'cancelado' && nota) {
     updateData.motivoCancelamento = nota;
   }

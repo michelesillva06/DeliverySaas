@@ -1,138 +1,170 @@
 import { Order, Store } from '../types';
 import { formatCurrency, formatDateTime } from './formatters';
 
+// Set global de IDs de pedidos já impressos automaticamente para evitar disparos duplicados
+const impressoAutoSet = new Set<string>();
+
+// Fila serial de impressão (Promises em cadeia) para evitar que múltiplos iframes se atropelem
+let filaImpressao: Promise<void> = Promise.resolve();
+
+function enfileirarImpressao(task: () => Promise<void>): Promise<void> {
+  filaImpressao = filaImpressao
+    .then(() => task())
+    .catch((err) => {
+      console.error('[Impressão] Erro na fila de impressão:', err);
+    });
+  return filaImpressao;
+}
+
 export function imprimirTicket(html: string, largura: '80mm' | '58mm' = '80mm'): Promise<void> {
-  return new Promise((resolve) => {
-    // Limpa iframe anterior se existir no DOM
-    const existingIframe = document.getElementById('iframe-impressao-isolado');
-    if (existingIframe) {
-      existingIframe.remove();
-    }
+  return enfileirarImpressao(() => {
+    return new Promise<void>((resolve) => {
+      const iframeId = `iframe-print-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-    const iframe = document.createElement('iframe');
-    iframe.id = 'iframe-impressao-isolado';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    iframe.style.visibility = 'hidden';
-    document.body.appendChild(iframe);
+      const iframe = document.createElement('iframe');
+      iframe.id = iframeId;
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
 
-    const doc = iframe.contentWindow!.document;
-    doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Comanda - Delivery</title>
-        <style>
-          @page {
-            size: ${largura} auto;
-            margin: 0;
-          }
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          html, body {
-            width: ${largura};
-            font-family: 'Courier New', Courier, monospace;
-            font-size: ${largura === '58mm' ? '10px' : '12px'};
-            line-height: 1.35;
-            padding: 3mm 2mm;
-            color: #000000;
-            background: #ffffff;
-          }
-          .titulo {
-            font-size: 16px;
-            font-weight: bold;
-            text-align: center;
-            margin-bottom: 2mm;
-            text-transform: uppercase;
-          }
-          .subtitulo {
-            font-size: 12px;
-            font-weight: bold;
-            text-align: center;
-            margin-bottom: 1mm;
-          }
-          .linha {
-            border-top: 1px dashed #000000;
-            margin: 2mm 0;
-          }
-          .destaque {
-            font-size: 14px;
-            font-weight: bold;
-          }
-          .bairro {
-            font-size: 15px;
-            font-weight: bold;
-            text-decoration: underline;
-            text-transform: uppercase;
-            margin-top: 1mm;
-          }
-          .item-linha {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 1mm;
-          }
-          .item-qtd-nome {
-            font-weight: bold;
-          }
-          .item-sub {
-            padding-left: 3mm;
-            font-size: 10px;
-          }
-          .obs {
-            font-weight: bold;
-            background: #f0f0f0;
-            padding: 1mm;
-            margin-top: 1mm;
-            border: 1px solid #cccccc;
-          }
-          .total {
-            font-size: 18px;
-            font-weight: bold;
-            text-align: center;
-            margin-top: 2mm;
-          }
-          .centralizado {
-            text-align: center;
-          }
-          .direita {
-            text-align: right;
-          }
-          .negrito {
-            font-weight: bold;
-          }
-        </style>
-      </head>
-      <body>${html}</body>
-      </html>
-    `);
-    doc.close();
+      const win = iframe.contentWindow;
+      if (!win) {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        resolve();
+        return;
+      }
 
-    const doPrint = () => {
-      try {
-        iframe.contentWindow!.focus();
-        iframe.contentWindow!.print();
-      } catch (e) {
-        console.error('Erro na impressão iframe:', e);
-      } finally {
+      const doc = win.document;
+      doc.open();
+      doc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Comanda - Delivery</title>
+          <style>
+            @page {
+              size: ${largura} auto;
+              margin: 0;
+            }
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            html, body {
+              width: ${largura};
+              font-family: 'Courier New', Courier, monospace;
+              font-size: ${largura === '58mm' ? '10px' : '12px'};
+              line-height: 1.35;
+              padding: 3mm 2mm;
+              color: #000000;
+              background: #ffffff;
+            }
+            .titulo {
+              font-size: 16px;
+              font-weight: bold;
+              text-align: center;
+              margin-bottom: 2mm;
+              text-transform: uppercase;
+            }
+            .subtitulo {
+              font-size: 12px;
+              font-weight: bold;
+              text-align: center;
+              margin-bottom: 1mm;
+            }
+            .linha {
+              border-top: 1px dashed #000000;
+              margin: 2mm 0;
+            }
+            .destaque {
+              font-size: 14px;
+              font-weight: bold;
+            }
+            .bairro {
+              font-size: 15px;
+              font-weight: bold;
+              text-decoration: underline;
+              text-transform: uppercase;
+              margin-top: 1mm;
+            }
+            .item-linha {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 1mm;
+            }
+            .item-qtd-nome {
+              font-weight: bold;
+            }
+            .item-sub {
+              padding-left: 3mm;
+              font-size: 10px;
+            }
+            .obs {
+              font-weight: bold;
+              background: #f0f0f0;
+              padding: 1mm;
+              margin-top: 1mm;
+              border: 1px solid #cccccc;
+            }
+            .total {
+              font-size: 18px;
+              font-weight: bold;
+              text-align: center;
+              margin-top: 2mm;
+            }
+            .centralizado {
+              text-align: center;
+            }
+            .direita {
+              text-align: right;
+            }
+            .negrito {
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body>${html}</body>
+        </html>
+      `);
+      doc.close();
+
+      let finalizado = false;
+      const finalizarELimpar = () => {
+        if (finalizado) return;
+        finalizado = true;
         setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe);
+          if (iframe.parentNode) {
+            iframe.parentNode.removeChild(iframe);
           }
           resolve();
-        }, 1000);
-      }
-    };
+        }, 800); // Intervalo seguro de 800ms antes do próximo ticket
+      };
 
-    setTimeout(doPrint, 250);
+      const executarImpressao = () => {
+        try {
+          win.focus();
+          win.onafterprint = () => {
+            finalizarELimpar();
+          };
+          win.print();
+          // Fallback caso onafterprint não seja disparado
+          setTimeout(finalizarELimpar, 1200);
+        } catch (err) {
+          console.error('[Impressão] Erro ao disparar print:', err);
+          finalizarELimpar();
+        }
+      };
+
+      // Dispara a impressão após renderização completa do iframe
+      setTimeout(executarImpressao, 350);
+    });
   });
 }
 
@@ -294,15 +326,23 @@ export async function dispararImpressaoSequencialAoAceitar(order: Order, store: 
     return;
   }
 
+  // Idempotência rigorosa: trava por ID de pedido na memória e no documento Firestore
+  if (impressoAutoSet.has(order.id) || order.impressoAutomaticamenteEm) {
+    console.log(`[Impressão] Pedido #${order.numero} (ID: ${order.id}) já foi impresso automaticamente. Ignorando.`);
+    return;
+  }
+
+  // Registra síncronamente no Set local antes de qualquer async para barrar novos cliques ou listeners
+  impressoAutoSet.add(order.id);
+
   const largura = store.larguraImpressora || '80mm';
 
-  // 1. Imprime Cozinha
+  // 1. PRIMEIRO: Imprime Ticket da COZINHA
   const htmlCozinha = gerarHtmlCozinha(order, store);
   await imprimirTicket(htmlCozinha, largura);
 
-  // 2. Se for pedido de ENTREGA, aguarda um pequeno intervalo (800ms) e dispara o de Entrega
+  // 2. SEGUNDO: Se for pedido de ENTREGA, imprime Ticket da ENTREGA (aguarda término da cozinha na fila)
   if (order.tipo === 'entrega') {
-    await new Promise((resolve) => setTimeout(resolve, 800));
     const htmlEntrega = gerarHtmlEntrega(order, store);
     await imprimirTicket(htmlEntrega, largura);
   }

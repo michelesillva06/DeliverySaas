@@ -261,6 +261,7 @@ export interface Order {
   tempoEstimadoMin?: number;
   historicoStatus: OrderHistoryItem[];
   criadoEm: string;
+  impressoAutomaticamenteEm?: string;
   teste?: boolean;
 }
 

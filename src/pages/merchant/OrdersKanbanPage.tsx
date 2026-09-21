@@ -22,6 +22,7 @@ import {
 import { formatCurrency, formatDateTime } from '../../lib/formatters';
 import { OrderDetailModal } from '../../components/OrderDetailModal';
 import { ThermalReceipt } from '../../components/ThermalReceipt';
+import { dispararImpressaoIndividual, dispararImpressaoSequencialAoAceitar } from '../../lib/impressao';
 import { playNewOrderAlert } from '../../lib/sound';
 import { useToast } from '../../components/Toast';
 
@@ -34,7 +35,7 @@ export const OrdersKanbanPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'todos' | 'entrega' | 'retirada'>('todos');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [orderToPrint, setOrderToPrint] = useState<Order | null>(null);
+  const [printConfig, setPrintConfig] = useState<{ order: Order; tipoTicket: 'cozinha' | 'entrega' } | null>(null);
 
   useEffect(() => {
     // Sincronização em tempo real 100% com Firestore
@@ -80,6 +81,7 @@ export const OrdersKanbanPage: React.FC = () => {
       if (order.status === 'novo') {
         await updateOrderStatusInFirestore(order.id, 'aceito');
         showToast(`Pedido #${order.numero} aceito!`, 'success');
+        dispararImpressaoSequencialAoAceitar(order, store, setPrintConfig);
       } else if (order.status === 'aceito') {
         await updateOrderStatusInFirestore(order.id, 'preparo');
         showToast(`Pedido #${order.numero} em preparo!`, 'success');
@@ -102,16 +104,13 @@ export const OrdersKanbanPage: React.FC = () => {
 
   const handlePrintReceipt = (e: React.MouseEvent, order: Order) => {
     e.stopPropagation();
-    setOrderToPrint(order);
-    setTimeout(() => {
-      window.print();
-    }, 100);
+    dispararImpressaoIndividual(order, store, 'entrega', setPrintConfig);
   };
 
   return (
     <div className="space-y-4">
-      {/* Elemento oculto para impressão térmica */}
-      {orderToPrint && <ThermalReceipt order={orderToPrint} store={store} />}
+      {/* Elemento isolado para impressão térmica via Portal */}
+      {printConfig && <ThermalReceipt order={printConfig.order} store={store} tipoTicket={printConfig.tipoTicket} />}
 
       {/* Barra de Filtros e Busca */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-neutral-200 shadow-xs">

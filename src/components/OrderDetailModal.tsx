@@ -24,6 +24,7 @@ import {
 } from '../services/firestoreService';
 import { useToast } from './Toast';
 import { ThermalReceipt } from './ThermalReceipt';
+import { dispararImpressaoIndividual, dispararImpressaoSequencialAoAceitar } from '../lib/impressao';
 
 interface OrderDetailModalProps {
   order: Order | null;
@@ -44,6 +45,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [estimatedTime, setEstimatedTime] = useState(order?.tempoEstimadoMin || store.tempoEstimadoMin || 40);
+  const [printConfig, setPrintConfig] = useState<{ order: Order; tipoTicket: 'cozinha' | 'entrega' } | null>(null);
 
   // Recalcular snapshot de preços para verificar consistência
   const isTotalConsistent = useMemo(() => {
@@ -59,6 +61,10 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
     try {
       await updateOrderStatusInFirestore(order.id, newStatus, undefined, estimatedTime);
       showToast(`Status do pedido atualizado para: ${newStatus}`, 'success');
+
+      if (newStatus === 'aceito') {
+        dispararImpressaoSequencialAoAceitar(order, store, setPrintConfig);
+      }
     } catch (err: any) {
       console.error(err);
       showToast('Erro ao atualizar status no Firestore.', 'error');
@@ -184,13 +190,23 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
 
           <div className="flex items-center gap-1.5">
             <button
-              onClick={handlePrint}
-              className="p-2 hover:bg-neutral-200 text-neutral-700 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
-              title="Imprimir comanda térmica (80mm)"
+              onClick={() => dispararImpressaoIndividual(order, store, 'cozinha', setPrintConfig)}
+              className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+              title="Imprimir ticket da cozinha (sem dados financeiros ou de cliente)"
             >
-              <Printer className="w-4 h-4" />
-              <span className="hidden sm:inline">Imprimir</span>
+              <Printer className="w-3.5 h-3.5 text-amber-700" />
+              <span>Imprimir Cozinha</span>
             </button>
+
+            <button
+              onClick={() => dispararImpressaoIndividual(order, store, 'entrega', setPrintConfig)}
+              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+              title="Imprimir ticket para entrega ou caixa"
+            >
+              <Printer className="w-3.5 h-3.5 text-indigo-700" />
+              <span>Imprimir Entrega</span>
+            </button>
+
             <button
               onClick={onClose}
               className="p-2 hover:bg-neutral-200 text-neutral-500 rounded-xl transition-colors cursor-pointer"
@@ -200,6 +216,11 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Portal de Impressão Térmica */}
+        {printConfig && (
+          <ThermalReceipt order={printConfig.order} store={store} tipoTicket={printConfig.tipoTicket} />
+        )}
 
         {/* Alerta de inconsistência se houver */}
         {!isTotalConsistent && (

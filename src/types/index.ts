@@ -84,6 +84,10 @@ export interface Store {
   aceitaEntrega: boolean;
   aceitaRetirada: boolean;
   
+  // Impressão Térmica
+  imprimirAutoAoAceitar?: boolean;
+  larguraImpressora?: '80mm' | '58mm';
+  
   nextOrderNumber: number;
   mensagensWhatsapp: StoreWhatsAppTemplates;
   soIniciarAposConfirmarPix?: boolean;

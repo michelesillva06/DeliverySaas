@@ -580,6 +580,51 @@ export const StoreSettingsPage: React.FC = () => {
                 className="w-full p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900 font-bold"
               />
             </div>
+
+            {/* Configurações de Impressora Térmica & Automação */}
+            <div className="sm:col-span-2 pt-4 border-t border-neutral-100 space-y-3">
+              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                <Printer className="w-4 h-4 text-neutral-600" />
+                <span>Impressora Térmica & Automação</span>
+              </h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="imprimirAuto"
+                    checked={formData.imprimirAutoAoAceitar !== false}
+                    onChange={(e) => setFormData({ ...formData, imprimirAutoAoAceitar: e.target.checked })}
+                    className="mt-1 w-4 h-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer"
+                  />
+                  <div>
+                    <label htmlFor="imprimirAuto" className="font-bold text-xs text-neutral-900 cursor-pointer">
+                      Imprimir automaticamente ao aceitar pedido
+                    </label>
+                    <p className="text-[11px] text-neutral-500 mt-0.5">
+                      Ao clicar em &quot;Aceitar&quot; no Kanban, dispara a impressão da Cozinha e em seguida da Entrega.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-xs text-neutral-900 mb-1">
+                    Largura do Papel da Impressora
+                  </label>
+                  <select
+                    value={formData.larguraImpressora || '80mm'}
+                    onChange={(e) => setFormData({ ...formData, larguraImpressora: e.target.value as '80mm' | '58mm' })}
+                    className="w-full p-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-neutral-900"
+                  >
+                    <option value="80mm">80mm (Padrão - Bobina Larga)</option>
+                    <option value="58mm">58mm (Bobina Estreita / Mini Térmica)</option>
+                  </select>
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Ajusta o tamanho das comandas térmicas impressas no navegador.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end pt-3 border-t border-neutral-100">

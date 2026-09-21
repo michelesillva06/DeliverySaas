@@ -27,6 +27,7 @@ import { useAuth } from '../../services/authContext';
 import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl } from '../../lib/formatters';
 import { limparObjeto } from '../../lib/utils';
 import { useToast } from '../../components/Toast';
+import { validateAndSanitizeCheckout } from '../../schemas/checkoutSchema';
 
 export const CheckoutWrapper: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -164,51 +165,44 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       return;
     }
 
-    if (!nome.trim()) {
-      showToast('Por favor, informe seu nome.', 'error');
+    // Validação e higienização robusta via Zod Schema
+    const validation = validateAndSanitizeCheckout({
+      nome,
+      telefone,
+      orderType,
+      rua,
+      numero,
+      complemento,
+      referencia,
+      bairro: selectedZone?.bairro || '',
+      paymentMethod,
+      trocoPara,
+      total,
+      lgpdConsent,
+    });
+
+    if (!validation.success) {
+      showToast(validation.error, 'error');
       return;
     }
 
-    const cleanTel = telefone.replace(/\D/g, '');
-    if (cleanTel.length < 10) {
-      showToast('Por favor, informe um telefone válido com DDD.', 'error');
-      return;
-    }
-
-    if (orderType === 'entrega') {
-      if (!rua.trim() || !numero.trim()) {
-        showToast('Preencha rua e número para entrega.', 'error');
-        return;
-      }
-      if (!selectedZone) {
-        showToast('Selecione seu bairro para calcular a entrega.', 'error');
-        return;
-      }
-    }
-
-    let parsedTroco: number | undefined = undefined;
-    if (paymentMethod === 'dinheiro' && trocoPara.trim()) {
-      parsedTroco = parseFloat(trocoPara.replace(',', '.'));
-      if (isNaN(parsedTroco) || parsedTroco < total) {
-        showToast(`O valor para troco deve ser maior que o total (${formatCurrency(total)}).`, 'error');
-        return;
-      }
-    }
-
-    if (!lgpdConsent) {
-      showToast('É necessário aceitar os termos de consentimento para continuar.', 'error');
-      return;
-    }
+    const {
+      nome: cleanNome,
+      telefone: cleanTel,
+      endereco: cleanEndereco,
+      paymentMethod: cleanPaymentMethod,
+      parsedTroco,
+    } = validation.data;
 
     setIsSubmitting(true);
 
     try {
       // Salvar preferências de preenchimento de formulário no localStorage
-      localStorage.setItem('checkout_nome', nome);
-      localStorage.setItem('checkout_tel', telefone);
-      if (orderType === 'entrega') {
-        localStorage.setItem('checkout_rua', rua);
-        localStorage.setItem('checkout_num', numero);
+      localStorage.setItem('checkout_nome', cleanNome);
+      localStorage.setItem('checkout_tel', cleanTel);
+      if (orderType === 'entrega' && cleanEndereco) {
+        localStorage.setItem('checkout_rua', cleanEndereco.rua);
+        localStorage.setItem('checkout_num', cleanEndereco.numero);
       }
 
       // Garantir autenticação anônima do cliente
@@ -219,20 +213,11 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         storeId: store.id,
         customerUid,
         cliente: {
-          nome: nome.trim(),
+          nome: cleanNome,
           telefone: cleanTel,
         },
         tipo: orderType,
-        endereco:
-          orderType === 'entrega' && selectedZone
-            ? {
-                rua: rua.trim(),
-                numero: numero.trim(),
-                bairro: selectedZone.bairro,
-                complemento: (complemento ?? '').trim(),
-                referencia: (referencia ?? '').trim(),
-              }
-            : null,
+        endereco: cleanEndereco,
         itens: items.map((item) => ({
           ...item,
           obs: (item.obs ?? '').trim(),
@@ -250,9 +235,9 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         taxaEntrega: Number(deliveryFee) || 0,
         total: Number(total) || 0,
         pagamento: {
-          forma: paymentMethod,
-          status: (paymentMethod === 'pix' ? 'aguardando' : paymentMethod === 'whatsapp' ? 'aguardando' : 'na_entrega') as PaymentStatus,
-          troco: paymentMethod === 'dinheiro' && typeof parsedTroco === 'number' && !isNaN(parsedTroco) ? parsedTroco : null,
+          forma: cleanPaymentMethod,
+          status: (cleanPaymentMethod === 'pix' ? 'aguardando' : cleanPaymentMethod === 'whatsapp' ? 'aguardando' : 'na_entrega') as PaymentStatus,
+          troco: parsedTroco,
         },
         status: 'novo' as const,
       });

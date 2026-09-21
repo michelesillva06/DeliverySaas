@@ -62,6 +62,7 @@ export function gerarBrCode(params: {
   cidade: string;
   valor?: number; // opcional: omitir para QR sem valor fixo
   txid: string;
+  descricao?: string;
 }): string {
   const tipo = params.tipoChave || detectarTipoChave(params.chave);
   const chave = normalizarChave(tipo, params.chave);

@@ -24,7 +24,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 2500);
   };
 
   const removeToast = (id: string) => {
@@ -34,16 +34,17 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
+      {/* Container posicionado no topo superior direito/centro para NÃO obstruir o rodapé ou botões fixos */}
+      <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-[9999] flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-center justify-between p-3.5 rounded-xl shadow-xl text-sm font-medium text-white transition-all transform animate-in slide-in-from-bottom-5 ${
+            className={`pointer-events-auto flex items-center justify-between p-3.5 rounded-xl shadow-2xl text-xs sm:text-sm font-semibold text-white transition-all transform animate-in slide-in-from-top-4 duration-200 ${
               toast.type === 'error'
-                ? 'bg-rose-600'
+                ? 'bg-rose-600 border border-rose-700'
                 : toast.type === 'info'
-                ? 'bg-neutral-800'
-                : 'bg-emerald-600'
+                ? 'bg-neutral-800 border border-neutral-700'
+                : 'bg-emerald-600 border border-emerald-700'
             }`}
           >
             <div className="flex items-center gap-2.5">
@@ -54,7 +55,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             </div>
             <button
               onClick={() => removeToast(toast.id)}
-              className="p-1 hover:bg-white/20 rounded-lg transition-colors ml-2"
+              className="p-1 hover:bg-white/20 rounded-lg transition-colors ml-2 flex-shrink-0"
               aria-label="Fechar notificação"
             >
               <X className="w-4 h-4" />

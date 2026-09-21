@@ -367,7 +367,6 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
               totalItem,
             });
             setSelectedProduct(null);
-            showToast('Item adicionado à sacola!', 'success');
           }}
         />
       )}

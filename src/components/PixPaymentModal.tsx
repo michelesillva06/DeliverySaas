@@ -24,6 +24,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
       try {
         setLoading(true);
         const code = gerarBrCode({
+          tipoChave: store.pixKeyType || 'aleatoria',
           chave: store.pixKey,
           nomeRecebedor: store.pixReceiverName || store.nome,
           cidade: store.pixCity || 'BRASIL',

@@ -597,7 +597,8 @@ export const deleteOptionGroupInFirestore = deleteOptionGroupFromFirestore;
 // ==========================================
 export function subscribeToDeliveryZonesByStore(
   storeId: string,
-  callback: (zones: DeliveryZone[]) => void
+  callback: (zones: DeliveryZone[]) => void,
+  onError?: (err: any) => void
 ): Unsubscribe {
   const colRef = collection(db, 'delivery_zones');
   const q = query(colRef, where('storeId', '==', storeId));
@@ -610,6 +611,7 @@ export function subscribeToDeliveryZonesByStore(
     },
     (err) => {
       console.error('Erro ao buscar taxas de entrega:', err);
+      if (onError) onError(err);
       callback([]);
     }
   );

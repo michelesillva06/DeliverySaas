@@ -23,6 +23,7 @@ import {
   assignCourierInFirestore,
 } from '../services/firestoreService';
 import { useToast } from './Toast';
+import { ThermalReceipt } from './ThermalReceipt';
 
 interface OrderDetailModalProps {
   order: Order | null;
@@ -144,6 +145,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <ThermalReceipt order={order} store={store} />
       <div
         className="bg-white w-full max-w-xl h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300"
         onClick={(e) => e.stopPropagation()}

@@ -47,10 +47,12 @@ export const SubscriptionPage: React.FC = () => {
       setLoadingQr(true);
       try {
         const payload = gerarBrCode({
+          tipoChave: (saasConfig?.pixTipoChave as any) || 'email',
           chave: chavePix,
           nomeRecebedor,
           cidade,
           valor,
+          txid: `SUB${store.id.replace(/[^A-Za-z0-9]/g, '').slice(-15)}`,
           descricao: `Mensalidade ${store.nome.slice(0, 15)}`,
         });
         setBrCodeString(payload);

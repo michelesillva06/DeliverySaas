@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Sparkles,
+  Edit2,
   XCircle,
 } from 'lucide-react';
 import { Store, DeliveryZone, DayHours } from '../../types';
@@ -24,6 +25,7 @@ import {
   saveStoreInFirestore,
   subscribeToDeliveryZonesByStore,
   createDeliveryZoneInFirestore,
+  updateDeliveryZoneInFirestore,
   deleteDeliveryZoneInFirestore,
   updateStoreHorariosInFirestore,
 } from '../../services/firestoreService';
@@ -116,8 +118,35 @@ export const StoreSettingsPage: React.FC = () => {
   // Form State
   const [formData, setFormData] = useState<Store>(store);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [zonesError, setZonesError] = useState<string | null>(null);
+  const [zonesLoading, setZonesLoading] = useState<boolean>(true);
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editingTaxa, setEditingTaxa] = useState<string>('');
+  const [editingTempo, setEditingTempo] = useState<string>('');
   const [storeQrCodeUrl, setStoreQrCodeUrl] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Assinar mudanças nos Bairros de Entrega do Firestore em tempo real
+  useEffect(() => {
+    if (!store?.id) return;
+    setZonesLoading(true);
+    setZonesError(null);
+
+    const unsub = subscribeToDeliveryZonesByStore(
+      store.id,
+      (zones) => {
+        setDeliveryZones(zones);
+        setZonesLoading(false);
+      },
+      (err) => {
+        console.error('Erro ao carregar bairros:', err);
+        setZonesError(err?.message || 'Erro ao carregar lista de bairros do Firestore.');
+        setZonesLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [store?.id]);
 
   // Novo Bairro
   const [newBairro, setNewBairro] = useState('');
@@ -334,6 +363,32 @@ export const StoreSettingsPage: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       showToast('Erro ao excluir bairro.', 'error');
+    }
+  };
+
+  const handleStartEditZone = (z: DeliveryZone) => {
+    setEditingZoneId(z.id);
+    setEditingTaxa(z.taxa.toString());
+    setEditingTempo((z.tempoMin || 40).toString());
+  };
+
+  const handleSaveEditedZone = async (id: string) => {
+    try {
+      const taxaNum = parseFloat(editingTaxa);
+      const tempoNum = parseInt(editingTempo, 10);
+      if (isNaN(taxaNum) || taxaNum < 0) {
+        showToast('Informe uma taxa de entrega válida.', 'error');
+        return;
+      }
+      await updateDeliveryZoneInFirestore(id, {
+        taxa: taxaNum,
+        tempoMin: isNaN(tempoNum) ? 40 : tempoNum,
+      });
+      setEditingZoneId(null);
+      showToast('Preço e tempo do bairro atualizados!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Erro ao atualizar bairro.', 'error');
     }
   };
 
@@ -864,29 +919,91 @@ export const StoreSettingsPage: React.FC = () => {
             <div className="p-4 border-b border-neutral-100 flex justify-between items-center">
               <h3 className="font-bold text-sm text-neutral-900">Bairros Atendidos ({deliveryZones.length})</h3>
             </div>
-            <div className="divide-y divide-neutral-100 text-xs">
-              {deliveryZones.length === 0 ? (
-                <div className="p-6 text-center text-neutral-400">Nenhum bairro cadastrado.</div>
-              ) : (
-                deliveryZones.map((z) => (
-                  <div key={z.id} className="p-3.5 flex items-center justify-between hover:bg-neutral-50">
-                    <div>
-                      <span className="font-bold text-neutral-900 text-sm">{z.bairro}</span>
-                      <p className="text-neutral-500 mt-0.5">Tempo estimado: ~{z.tempoMin} min</p>
-                    </div>
 
-                    <div className="flex items-center gap-4">
-                      <span className="font-extrabold text-neutral-900 text-sm">{formatCurrency(z.taxa)}</span>
-                      <button
-                        onClick={() => handleDeleteZone(z.id)}
-                        className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                        title="Remover Bairro"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+            {zonesError && (
+              <div className="p-4 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs flex items-center gap-2 font-medium">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{zonesError}</span>
+              </div>
+            )}
+
+            <div className="divide-y divide-neutral-100 text-xs">
+              {zonesLoading ? (
+                <div className="p-6 text-center text-neutral-400 flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Carregando bairros do Firestore...</span>
+                </div>
+              ) : deliveryZones.length === 0 ? (
+                <div className="p-6 text-center text-neutral-400">Nenhum bairro cadastrado no momento.</div>
+              ) : (
+                deliveryZones.map((z) => {
+                  const isEditing = editingZoneId === z.id;
+                  return (
+                    <div key={z.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-neutral-50">
+                      <div>
+                        <span className="font-bold text-neutral-900 text-sm">{z.bairro}</span>
+                        {!isEditing && (
+                          <p className="text-neutral-500 mt-0.5">Tempo estimado: ~{z.tempoMin || 40} min</p>
+                        )}
+                      </div>
+
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-neutral-500">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingTaxa}
+                              onChange={(e) => setEditingTaxa(e.target.value)}
+                              className="w-20 p-1.5 border border-neutral-300 rounded-lg text-xs font-bold"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={editingTempo}
+                              onChange={(e) => setEditingTempo(e.target.value)}
+                              className="w-16 p-1.5 border border-neutral-300 rounded-lg text-xs"
+                            />
+                            <span className="text-neutral-500">min</span>
+                          </div>
+                          <button
+                            onClick={() => handleSaveEditedZone(z.id)}
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center gap-1"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Salvar</span>
+                          </button>
+                          <button
+                            onClick={() => setEditingZoneId(null)}
+                            className="px-2.5 py-1.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 rounded-lg font-bold"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="font-extrabold text-neutral-900 text-sm">{formatCurrency(z.taxa)}</span>
+                          <button
+                            onClick={() => handleStartEditZone(z)}
+                            className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 cursor-pointer"
+                            title="Editar Preço e Tempo"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteZone(z.id)}
+                            className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                            title="Remover Bairro"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -902,7 +1019,22 @@ export const StoreSettingsPage: React.FC = () => {
               O sistema gera o QR Code e o código EMV padrão Banco Central automaticamente com o valor do pedido.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="block font-bold text-neutral-700 mb-1">Tipo de Chave *</label>
+                <select
+                  value={formData.pixKeyType || 'aleatoria'}
+                  onChange={(e) => setFormData({ ...formData, pixKeyType: e.target.value as any })}
+                  className="w-full p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900 bg-white"
+                >
+                  <option value="cpf">CPF</option>
+                  <option value="cnpj">CNPJ</option>
+                  <option value="email">E-mail</option>
+                  <option value="telefone">Telefone (DDD + Celular)</option>
+                  <option value="aleatoria">Chave Aleatória (EVP/UUID)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block font-bold text-neutral-700 mb-1">Chave Pix *</label>
                 <input

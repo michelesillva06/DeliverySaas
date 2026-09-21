@@ -66,7 +66,7 @@ export function formatTime(dateStr: string): string {
   }).format(date);
 }
 
-import { Store, DayHours, TimePeriod } from '../types';
+import { Store, DayHours, TimePeriod, Order, Courier } from '../types';
 
 export const DIAS_DA_SEMANA = [
   { dia: 1, nomeDia: 'Segunda-feira', nomeCurto: 'Seg' },
@@ -314,3 +314,119 @@ export async function compressImage(file: File, maxWidth = 800, quality = 0.75):
     reader.onerror = (err) => reject(err);
   });
 }
+
+/**
+ * Gera a mensagem formatada para envio ao WhatsApp do entregador
+ */
+export function gerarMensagemEntregador(order: Order, store: Store): string {
+  const clienteTel = formatPhone(order.cliente.telefone);
+
+  let enderecoTxt = '';
+  if (order.tipo === 'entrega' && order.endereco) {
+    const end = order.endereco;
+    const endLinhas: string[] = [];
+    endLinhas.push(`${end.rua}, Nº ${end.numero}`);
+    if (end.complemento && end.complemento.trim()) {
+      endLinhas.push(end.complemento.trim());
+    }
+    endLinhas.push(`Bairro: ${end.bairro}`);
+    if (end.referencia && end.referencia.trim()) {
+      endLinhas.push(end.referencia.trim());
+    }
+    enderecoTxt = endLinhas.join('\n');
+  } else {
+    enderecoTxt = 'Retirada no balcão';
+  }
+
+  let mapsTxt = '';
+  if (order.tipo === 'entrega' && order.endereco) {
+    const end = order.endereco;
+    const partes = [end.rua, `Nº ${end.numero}`, end.bairro, store.pixCity].filter(Boolean);
+    const endQuery = partes.join(', ');
+    mapsTxt = `🗺️ Ver no mapa: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endQuery)}`;
+  }
+
+  const forma = order.pagamento.forma;
+  const isPixConfirmed = order.pagamento.status === 'confirmado';
+  let pagamentoTxt = '';
+
+  if (forma === 'pix') {
+    let pixStatus = 'Status: ';
+    if (isPixConfirmed) {
+      pixStatus += '✅ PAGO';
+    } else {
+      pixStatus += '⏳ AGUARDANDO CONFIRMAÇÃO — não faça a entrega sem confirmar com a loja';
+    }
+    pagamentoTxt = `💰 Pagamento: Pix\n${pixStatus}`;
+  } else if (forma === 'dinheiro') {
+    const trocoVal = order.pagamento.trocoPara || (order.pagamento.troco ? order.total + order.pagamento.troco : null);
+    let dinheiroInfo = `💵 Receber: ${formatCurrency(order.total)}`;
+    if (trocoVal && trocoVal > 0) {
+      dinheiroInfo += ` (troco para ${formatCurrency(trocoVal)})`;
+    }
+    pagamentoTxt = `💰 Pagamento: Dinheiro\n${dinheiroInfo}`;
+  } else if (forma === 'cartao_entrega' || (forma as string) === 'cartao_maquininha' || (forma as string) === 'cartao') {
+    pagamentoTxt = `💰 Pagamento: Cartão na entrega\n💳 Levar maquininha — Total: ${formatCurrency(order.total)}`;
+  } else {
+    pagamentoTxt = `💰 Pagamento: A combinar\nTotal: ${formatCurrency(order.total)}`;
+  }
+
+  const blocos = [
+    `🛵 NOVA ENTREGA — Pedido #${order.numero}`,
+    '',
+    `Cliente: ${order.cliente.nome}`,
+    `Telefone: ${clienteTel}`,
+    '',
+    '📍 Endereço:',
+    enderecoTxt,
+  ];
+
+  if (mapsTxt) {
+    blocos.push('');
+    blocos.push(mapsTxt);
+  }
+
+  blocos.push('');
+  blocos.push(pagamentoTxt);
+  blocos.push('');
+  blocos.push('Boa entrega! 🙏');
+
+  return blocos.join('\n');
+}
+
+/**
+ * Dispara a notificação via WhatsApp para o entregador
+ */
+export function notificarEntregadorWhatsApp(
+  order: Order,
+  courier: Courier | undefined,
+  store: Store,
+  showToast: (msg: string, type: 'success' | 'error' | 'info') => void,
+  targetWindow?: Window | null
+): boolean {
+  if (!courier) {
+    if (targetWindow) targetWindow.close();
+    showToast('Nenhum entregador vinculado a este pedido.', 'error');
+    return false;
+  }
+
+  const digits = (courier.telefone || '').replace(/\D/g, '');
+  if (!digits) {
+    if (targetWindow) targetWindow.close();
+    showToast('Cadastre o telefone do entregador em /painel/entregadores para poder notificá-lo.', 'error');
+    return false;
+  }
+
+  const mensagem = gerarMensagemEntregador(order, store);
+  const url = generateWhatsAppUrl(courier.telefone, mensagem);
+
+  if (targetWindow) {
+    targetWindow.location.href = url;
+  } else {
+    window.open(url, '_blank');
+  }
+
+  showToast(`WhatsApp aberto para notificar ${courier.nome}!`, 'success');
+  return true;
+}
+

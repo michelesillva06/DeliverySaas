@@ -16,7 +16,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { Order, Store, Courier, OrderStatus } from '../types';
-import { formatCurrency, formatDateTime, generateWhatsAppUrl } from '../lib/formatters';
+import { formatCurrency, formatDateTime, generateWhatsAppUrl, notificarEntregadorWhatsApp } from '../lib/formatters';
 import {
   updateOrderStatusInFirestore,
   updateOrderPaymentStatusInFirestore,
@@ -111,11 +111,42 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   };
 
   const handleAssignCourier = async (courierId: string) => {
+    if (!courierId) {
+      try {
+        await assignCourierInFirestore(order.id, '');
+        showToast('Entregador desvinculado do pedido.', 'info');
+      } catch (err: any) {
+        console.error(err);
+        showToast('Erro ao desvincular entregador no Firestore.', 'error');
+      }
+      return;
+    }
+
+    const selectedCourier = couriers.find((c) => c.id === courierId);
+    const phoneDigits = (selectedCourier?.telefone || '').replace(/\D/g, '');
+
+    if (!selectedCourier || !phoneDigits) {
+      showToast('Cadastre o telefone do entregador em /painel/entregadores para poder notificá-lo.', 'error');
+      try {
+        await assignCourierInFirestore(order.id, courierId);
+        showToast('Entregador vinculado ao pedido.', 'success');
+      } catch (err: any) {
+        console.error(err);
+        showToast('Erro ao vincular entregador no Firestore.', 'error');
+      }
+      return;
+    }
+
+    // Pre-abrir janela para evitar bloqueio de popup pelo navegador
+    const popupWin = window.open('about:blank', '_blank');
+
     try {
       await assignCourierInFirestore(order.id, courierId);
-      showToast('Entregador vinculado ao pedido.', 'success');
+      showToast(`Entregador ${selectedCourier.nome} vinculado!`, 'success');
+      notificarEntregadorWhatsApp(order, selectedCourier, store, showToast, popupWin);
     } catch (err: any) {
       console.error(err);
+      if (popupWin) popupWin.close();
       showToast('Erro ao vincular entregador no Firestore.', 'error');
     }
   };
@@ -399,7 +430,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
               <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
                 Entregador Responsável
               </h3>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <select
                   value={order.entregadorId || ''}
                   onChange={(e) => handleAssignCourier(e.target.value)}
@@ -410,10 +441,25 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                     .filter((c) => c.ativo)
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.nome} ({c.telefone}) - Taxa: {formatCurrency(c.taxaEntrega)}
+                        {c.nome} {c.telefone ? `(${c.telefone})` : '(Sem telefone)'} - Taxa: {formatCurrency(c.taxaEntrega)}
                       </option>
                     ))}
                 </select>
+
+                {order.entregadorId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const assignedCourier = couriers.find((c) => c.id === order.entregadorId);
+                      notificarEntregadorWhatsApp(order, assignedCourier, store, showToast);
+                    }}
+                    className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer flex-shrink-0 shadow-xs"
+                    title="Notificar entregador no WhatsApp"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Notificar entregador</span>
+                  </button>
+                )}
               </div>
             </div>
           )}

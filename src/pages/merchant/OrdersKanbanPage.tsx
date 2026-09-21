@@ -12,6 +12,7 @@ import {
   AlertCircle,
   QrCode,
   DollarSign,
+  MessageCircle,
 } from 'lucide-react';
 import { Store, Order, OrderStatus, Courier } from '../../types';
 import {
@@ -19,7 +20,7 @@ import {
   subscribeToCouriersByStore,
   updateOrderStatusInFirestore,
 } from '../../services/firestoreService';
-import { formatCurrency, formatDateTime } from '../../lib/formatters';
+import { formatCurrency, formatDateTime, notificarEntregadorWhatsApp } from '../../lib/formatters';
 import { OrderDetailModal } from '../../components/OrderDetailModal';
 import { imprimirTicketEntrega, dispararImpressaoSequencialAoAceitar } from '../../lib/impressao';
 import { playNewOrderAlert } from '../../lib/sound';
@@ -169,6 +170,8 @@ export const OrdersKanbanPage: React.FC = () => {
               <OrderCard
                 key={order.id}
                 order={order}
+                store={store}
+                couriers={couriers}
                 onSelect={() => setSelectedOrder(order)}
                 onQuickAdvance={(e) => handleQuickAdvance(e, order)}
                 onPrint={(e) => handlePrintReceipt(e, order)}
@@ -193,6 +196,8 @@ export const OrdersKanbanPage: React.FC = () => {
               <OrderCard
                 key={order.id}
                 order={order}
+                store={store}
+                couriers={couriers}
                 onSelect={() => setSelectedOrder(order)}
                 onQuickAdvance={(e) => handleQuickAdvance(e, order)}
                 onPrint={(e) => handlePrintReceipt(e, order)}
@@ -217,6 +222,8 @@ export const OrdersKanbanPage: React.FC = () => {
               <OrderCard
                 key={order.id}
                 order={order}
+                store={store}
+                couriers={couriers}
                 onSelect={() => setSelectedOrder(order)}
                 onQuickAdvance={(e) => handleQuickAdvance(e, order)}
                 onPrint={(e) => handlePrintReceipt(e, order)}
@@ -241,6 +248,8 @@ export const OrdersKanbanPage: React.FC = () => {
               <OrderCard
                 key={order.id}
                 order={order}
+                store={store}
+                couriers={couriers}
                 onSelect={() => setSelectedOrder(order)}
                 onQuickAdvance={(e) => handleQuickAdvance(e, order)}
                 onPrint={(e) => handlePrintReceipt(e, order)}
@@ -287,13 +296,24 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, count, color, badgeC
 
 interface OrderCardProps {
   order: Order;
+  store: Store;
+  couriers: Courier[];
   onSelect: () => void;
   onQuickAdvance: (e: React.MouseEvent) => void;
   onPrint: (e: React.MouseEvent) => void;
 }
 
-const OrderCard: React.FC<OrderCardProps> = ({ order, onSelect, onQuickAdvance, onPrint }) => {
+const OrderCard: React.FC<OrderCardProps> = ({
+  order,
+  store,
+  couriers,
+  onSelect,
+  onQuickAdvance,
+  onPrint,
+}) => {
+  const { showToast } = useToast();
   const isPixWaiting = order.pagamento.forma === 'pix' && order.pagamento.status !== 'confirmado';
+  const assignedCourier = order.entregadorId ? couriers.find((c) => c.id === order.entregadorId) : null;
 
   return (
     <div
@@ -329,6 +349,35 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onSelect, onQuickAdvance, 
       <div className="mt-2 text-xs text-neutral-600 line-clamp-2 bg-neutral-50 p-1.5 rounded-lg">
         {order.itens.map((it) => `${it.qtd}x ${it.nome}`).join(' • ')}
       </div>
+
+      {/* Entregador Atribuído e Botão Notificar */}
+      {order.tipo === 'entrega' && order.entregadorId && (
+        <div className="mt-2 flex items-center justify-between text-[11px] bg-indigo-50/70 p-1.5 rounded-lg border border-indigo-100">
+          <div className="flex items-center gap-1 text-indigo-900 font-bold truncate">
+            <Bike className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+            <span className="truncate">
+              {assignedCourier ? assignedCourier.nome : 'Entregador atribuído'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (assignedCourier) {
+                notificarEntregadorWhatsApp(order, assignedCourier, store, showToast);
+              } else {
+                showToast('Entregador não encontrado.', 'error');
+              }
+            }}
+            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer flex-shrink-0 shadow-xs"
+            title="Notificar entregador no WhatsApp"
+          >
+            <MessageCircle className="w-3 h-3" />
+            <span>Notificar</span>
+          </button>
+        </div>
+      )}
 
       {/* Alertas Rápidos (Pix aguardando confirmação) */}
       {isPixWaiting && (

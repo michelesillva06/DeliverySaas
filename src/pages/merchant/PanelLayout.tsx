@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   ShieldAlert,
+  AlertTriangle,
   MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
@@ -424,6 +425,22 @@ export const PanelLayout: React.FC = () => {
             <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-rose-900 text-xs font-bold shadow-xs">
               <ShieldAlert className="w-5 h-5 text-rose-600 flex-shrink-0" />
               <span>Esta loja está bloqueada no momento. Entre em contato com o suporte.</span>
+            </div>
+          )}
+
+          {/* Banner de Aviso: Pix Habilitado sem Teste */}
+          {(store.pagamentos?.pix || store.pixKey) && !store.pixTestadoEm && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 text-xs font-bold shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <span>Você ainda não testou sua chave Pix. Teste antes de divulgar sua loja.</span>
+              </div>
+              <Link
+                to="/painel/configuracoes?tab=pagamentos"
+                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors flex-shrink-0 shadow-xs"
+              >
+                Testar meu Pix
+              </Link>
             </div>
           )}
 

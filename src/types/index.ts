@@ -71,6 +71,7 @@ export interface Store {
   pixKeyType: PixKeyType;
   pixReceiverName: string; // Max 25 chars, uppercase, no accents
   pixCity: string; // Max 15 chars, uppercase, no accents
+  pixTestadoEm?: string; // ISO date string de quando a chave foi testada com R$ 1,00
   
   // Formas de Pagamento
   pagamentos: StorePaymentMethods;
@@ -249,9 +250,12 @@ export interface Order {
     forma: PaymentMethod;
     status: PaymentStatus;
     troco?: number | null;
+    trocoPara?: number | null;
     txid?: string;
   };
   status: OrderStatus;
+  observacao?: string;
+  observacoes?: string;
   motivoCancelamento?: string;
   entregadorId?: string;
   tempoEstimadoMin?: number;

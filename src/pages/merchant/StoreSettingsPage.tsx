@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Save,
   Clock,
@@ -35,7 +35,7 @@ import {
   getStoreCurrentStatusText,
   isStoreOpen,
 } from '../../lib/formatters';
-import { gerarQrCodeDataUrl } from '../../lib/pix';
+import { gerarBrCode, gerarQrCodeDataUrl } from '../../lib/pix';
 import { ImageUploader } from '../../components/ImageUploader';
 import { useToast } from '../../components/Toast';
 
@@ -112,8 +112,17 @@ function validateDayHours(day: DayHours): string[] {
 export const StoreSettingsPage: React.FC = () => {
   const { store } = useOutletContext<{ store: Store }>();
   const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<'perfil' | 'horarios' | 'bairros' | 'pagamentos' | 'whatsapp' | 'qrcode'>('perfil');
+
+  // Sync tab with URL search parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['perfil', 'horarios', 'bairros', 'pagamentos', 'whatsapp', 'qrcode'].includes(tabParam)) {
+      setActiveTab(tabParam as any);
+    }
+  }, [searchParams]);
 
   // Form State
   const [formData, setFormData] = useState<Store>(store);
@@ -125,6 +134,48 @@ export const StoreSettingsPage: React.FC = () => {
   const [editingTempo, setEditingTempo] = useState<string>('');
   const [storeQrCodeUrl, setStoreQrCodeUrl] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Teste Pix State
+  const [testPixModalOpen, setTestPixModalOpen] = useState(false);
+  const [testPixBrCode, setTestPixBrCode] = useState('');
+  const [testPixQrCodeUrl, setTestPixQrCodeUrl] = useState('');
+  const [testPixLoading, setTestPixLoading] = useState(false);
+
+  const handleTestPix = async () => {
+    if (!formData.pixKey?.trim()) {
+      showToast('Informe uma Chave Pix válida no formulário antes de testar.', 'error');
+      return;
+    }
+    setTestPixLoading(true);
+    try {
+      const brCode = gerarBrCode({
+        tipoChave: formData.pixKeyType || 'aleatoria',
+        chave: formData.pixKey,
+        nomeRecebedor: formData.pixReceiverName || formData.nome || 'LOJA',
+        cidade: formData.pixCity || 'MANAUS',
+        valor: 1.00,
+        txid: `TESTE${Date.now().toString().slice(-6)}`,
+      });
+
+      const qrUrl = await gerarQrCodeDataUrl(brCode);
+      setTestPixBrCode(brCode);
+      setTestPixQrCodeUrl(qrUrl);
+      setTestPixModalOpen(true);
+
+      // Guardar pixTestadoEm em stores/{id} no Firestore
+      const nowIso = new Date().toISOString();
+      setFormData((prev) => ({ ...prev, pixTestadoEm: nowIso }));
+      if (store?.id) {
+        await saveStoreInFirestore({ ...store, pixTestadoEm: nowIso });
+      }
+      showToast('QR Code de teste (R$ 1,00) gerado! Validação Pix registrada.', 'success');
+    } catch (err) {
+      console.error('Erro ao gerar Pix de teste:', err);
+      showToast('Erro ao gerar QR Code de teste do Pix.', 'error');
+    } finally {
+      setTestPixLoading(false);
+    }
+  };
 
   // Assinar mudanças nos Bairros de Entrega do Firestore em tempo real
   useEffect(() => {
@@ -1116,6 +1167,44 @@ export const StoreSettingsPage: React.FC = () => {
                 />
               </div>
             </div>
+
+            {/* AVISO FIXO DA CHAVE PIX */}
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs leading-relaxed flex items-start gap-2.5 shadow-2xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>
+                Confirme que esta chave está cadastrada e <strong>ATIVA</strong> no aplicativo do seu banco (Pix &rarr; Minhas chaves) antes de salvar. Um CPF, CNPJ, e-mail ou telefone só funciona aqui se já for uma chave Pix registrada — não basta ser um documento válido.
+              </span>
+            </div>
+
+            {/* BOTÃO E STATUS DE TESTE PIX */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+              <div>
+                <h4 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-neutral-700" />
+                  <span>Validação de Chave Pix no Banco</span>
+                </h4>
+                <p className="text-[11px] text-neutral-500 mt-0.5">
+                  {formData.pixTestadoEm ? (
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Pix testado em {new Date(formData.pixTestadoEm).toLocaleDateString('pt-BR')} às {new Date(formData.pixTestadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  ) : (
+                    'Gere um QR Code de teste de R$ 1,00 para confirmar no seu app bancário se seu nome aparece.'
+                  )}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestPix}
+                disabled={testPixLoading}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50 flex-shrink-0"
+              >
+                {testPixLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+                <span>Testar meu Pix (R$ 1,00)</span>
+              </button>
+            </div>
           </div>
 
           <div className="pt-4 border-t border-neutral-100 space-y-3 text-xs">
@@ -1337,6 +1426,103 @@ export const StoreSettingsPage: React.FC = () => {
               <Printer className="w-4 h-4" />
               <span>Imprimir Cartaz</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE TESTE PIX (R$ 1,00) */}
+      {testPixModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-neutral-200 space-y-4 relative">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <h3 className="font-extrabold text-sm text-neutral-900 flex items-center gap-2">
+                <QrCode className="w-5 h-5 text-emerald-600" />
+                <span>Teste de Validação Pix (R$ 1,00)</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setTestPixModalOpen(false)}
+                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* QR Code */}
+            <div className="text-center space-y-2">
+              <div className="p-3 bg-white border-2 border-dashed border-neutral-200 rounded-2xl inline-block">
+                {testPixQrCodeUrl ? (
+                  <img src={testPixQrCodeUrl} alt="QR Code Teste Pix" className="w-48 h-48 mx-auto" />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-xs text-neutral-400">
+                    Gerando...
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] font-bold text-emerald-800 bg-emerald-50 py-1 px-3 rounded-lg inline-block">
+                Valor do teste: R$ 1,00
+              </p>
+            </div>
+
+            {/* Copia e Cola */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-neutral-700">Código Pix Copia e Cola:</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={testPixBrCode}
+                  className="flex-1 p-2 bg-neutral-50 border border-neutral-200 rounded-xl text-[10px] font-mono text-neutral-600 truncate"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(testPixBrCode);
+                    showToast('Código Pix copiado!', 'success');
+                  }}
+                  className="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer flex-shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Checklist Visual Exigida */}
+            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-2.5 text-xs text-neutral-800">
+              <h4 className="font-extrabold text-neutral-900 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Instruções de Validação:</span>
+              </h4>
+              <ol className="space-y-2 text-xs font-medium">
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-neutral-900 bg-white border border-neutral-300 rounded px-1.5 py-0.5 text-[10px] shadow-2xs">1</span>
+                  <span>Abra o app do seu banco</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-neutral-900 bg-white border border-neutral-300 rounded px-1.5 py-0.5 text-[10px] shadow-2xs">2</span>
+                  <span>Escaneie ou cole o código</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-neutral-900 bg-white border border-neutral-300 rounded px-1.5 py-0.5 text-[10px] shadow-2xs">3</span>
+                  <span>Confirme que aparece <strong>SEU NOME</strong> e <strong>R$ 1,00</strong></span>
+                </li>
+                <li className="flex items-start gap-2 text-rose-700 font-semibold bg-rose-50 p-2.5 rounded-xl border border-rose-200 mt-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  <span>4. Se der erro, a chave não está ativa nesta conta — corrija em Configurações.</span>
+                </li>
+              </ol>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setTestPixModalOpen(false)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Concluir Teste
+              </button>
+            </div>
           </div>
         </div>
       )}

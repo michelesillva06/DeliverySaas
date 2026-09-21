@@ -22,7 +22,6 @@ import {
 import { Store, Order, OrderStatus } from '../../types';
 import { formatCurrency, formatDateTime, generateWhatsAppUrl } from '../../lib/formatters';
 import { PixPaymentModal } from '../../components/PixPaymentModal';
-import { ThermalReceipt } from '../../components/ThermalReceipt';
 import { CartProvider, useCart } from '../../services/cartContext';
 import { useToast } from '../../components/Toast';
 
@@ -162,9 +161,6 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-20">
-      {/* Elemento oculto para impressão térmica se necessário */}
-      <ThermalReceipt order={order} store={store} />
-
       {/* Topo do Acompanhamento */}
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">

@@ -130,9 +130,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(profile);
         return profile;
       } else {
-        console.log('[Auth Flow] Documento users/' + user.uid + ' NÃO existe no Firestore.');
+        console.log('[Auth Flow] Documento users/' + user.uid + ' NÃO existe no Firestore. Verificando por e-mail...');
+
+        // Tentar encontrar perfil existente pelo e-mail
+        if (user.email) {
+          try {
+            const q = query(collection(db, 'users'), where('email', '==', user.email.toLowerCase().trim()));
+            const snapEmail = await getDocs(q);
+            if (!snapEmail.empty) {
+              const profile = snapEmail.docs[0].data() as UserProfile;
+              // Sincronizar o uid se for diferente
+              profile.uid = user.uid;
+              await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+
+              if (profile.ativo === false) {
+                await signOut(auth);
+                localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+                setCurrentUser(null);
+                return null;
+              }
+
+              localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(profile));
+              setCurrentUser(profile);
+              return profile;
+            }
+          } catch (eEmail) {
+            console.warn('[Auth Flow] Erro na consulta de perfil por e-mail:', eEmail);
+          }
+        }
+
         // Se for master padrão autenticado no Auth mas sem doc ainda
-        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br') {
+        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br' || user.email?.toLowerCase() === 'master@delivery.com') {
           const masterProfile: UserProfile = {
             uid: user.uid,
             email: user.email,
@@ -140,6 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'superadmin',
             ativo: true,
           };
+          await setDoc(doc(db, 'users', user.uid), masterProfile, { merge: true });
           localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(masterProfile));
           setCurrentUser(masterProfile);
           return masterProfile;

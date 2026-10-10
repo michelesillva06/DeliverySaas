@@ -593,25 +593,29 @@ export const SuperAdminPage: React.FC = () => {
     setTimeout(() => setUserAccessCopied(false), 4000);
   };
 
-  // Criar / Resetar Restaurante e Usuário de Teste (1-Clique)
+  // Criar / Resetar Restaurante e Usuário de Teste / Demonstração (1-Clique)
   const handleCreateOrResetTestRestaurant = async () => {
     setCreatingTestStore(true);
     try {
-      const testEmail = 'teste@delivery.com';
-      const testSenha = '123456';
-      const testNomeLoja = 'Restaurante Teste';
-      const testSlug = 'restaurante-teste';
+      const testEmail = 'demo@delivery.com';
+      const testSenha = generateStrongPassword(8);
+      const testNomeLoja = 'Restaurante Demonstração';
+      const testSlug = 'restaurante-demonstracao';
 
       let targetStore = stores.find((s) => s.slug === testSlug || s.emailResponsavel?.toLowerCase() === testEmail);
-      let storeId = targetStore?.id || `store_teste_${Date.now().toString(36)}`;
+      let storeId = targetStore?.id || `store_demo_${Date.now().toString(36)}`;
       let ownerUid = targetStore?.ownerUid || `user_${storeId}`;
 
+      // Criar usuário no Firebase Authentication através da instância secundária
       try {
         const secAuth = getSecondaryAuthInstance();
-        await createUserWithEmailAndPassword(secAuth, testEmail, testSenha);
+        const cred = await createUserWithEmailAndPassword(secAuth, testEmail, testSenha);
+        if (cred?.user?.uid) {
+          ownerUid = cred.user.uid;
+        }
         await signOut(secAuth);
       } catch (authErr: any) {
-        console.log('Usuário Auth teste já existia ou criado:', authErr?.code);
+        console.log('Firebase Auth secundário retorno:', authErr?.code);
       }
 
       const userProfile: UserProfile = {
@@ -650,9 +654,9 @@ export const SuperAdminPage: React.FC = () => {
         diaVencimento: 10,
         dataVencimento: vencimento.toISOString(),
         status: 'ativa',
-        pixKey: 'teste@delivery.com',
+        pixKey: 'demo@delivery.com',
         pixKeyType: 'email',
-        pixReceiverName: 'RESTAURANTE TESTE LTDA',
+        pixReceiverName: 'RESTAURANTE DEMONSTRACAO LTDA',
         pixCity: 'MANAUS',
         pagamentos: {
           pix: true,
@@ -698,7 +702,7 @@ export const SuperAdminPage: React.FC = () => {
         storeId,
       });
 
-      showToast(`Usuário e Loja de Teste prontos! (${testEmail} / ${testSenha})`, 'success');
+      showToast(`Loja de Demonstração criada com sucesso! (${testEmail})`, 'success');
     } catch (err: any) {
       console.error(err);
       showToast('Erro ao criar usuário de teste: ' + (err.message || err), 'error');
@@ -1682,18 +1686,20 @@ export const SuperAdminPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                   <div className="bg-white p-3 rounded-xl border border-neutral-200">
                     <span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome da Loja</span>
-                    <span className="font-bold text-neutral-900">Restaurante Teste</span>
-                    <span className="text-[10px] text-neutral-400 block font-mono">/restaurante-teste</span>
+                    <span className="font-bold text-neutral-900">Restaurante Demonstração</span>
+                    <span className="text-[10px] text-neutral-400 block font-mono">/restaurante-demonstracao</span>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-neutral-200">
                     <span className="text-[10px] font-bold text-neutral-400 uppercase block">E-mail de Login</span>
-                    <span className="font-bold font-mono text-neutral-900 break-all">teste@delivery.com</span>
+                    <span className="font-bold font-mono text-neutral-900 break-all">demo@delivery.com</span>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-neutral-200">
                     <span className="text-[10px] font-bold text-neutral-400 uppercase block">Senha</span>
-                    <span className="font-bold font-mono text-rose-600">123456</span>
+                    <span className="font-bold font-mono text-rose-600">
+                      {testUserSuccessInfo?.senha || 'Gerada pelo sistema'}
+                    </span>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-neutral-200">
@@ -1709,22 +1715,45 @@ export const SuperAdminPage: React.FC = () => {
                     className="px-5 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>{creatingTestStore ? 'Provisionando Usuário e Loja...' : '⚡ Criar / Resetar Usuário Teste Agora'}</span>
+                    <span>{creatingTestStore ? 'Provisionando no Firebase Auth & Firestore...' : '⚡ Criar Loja de Teste (demo@delivery.com)'}</span>
                   </button>
 
                   {testUserSuccessInfo && (
-                    <button
-                      onClick={() => {
-                        setActiveStoreId(testUserSuccessInfo.storeId);
-                        navigate('/painel');
-                      }}
-                      className="px-4 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
-                    >
-                      <Building2 className="w-4 h-4 text-amber-400" />
-                      <span>Acessar Painel da Loja Teste</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setActiveStoreId(testUserSuccessInfo.storeId);
+                          navigate('/painel');
+                        }}
+                        className="px-4 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+                      >
+                        <Building2 className="w-4 h-4 text-amber-400" />
+                        <span>Acessar Painel Como a Loja Demo</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`Email: ${testUserSuccessInfo.email}\nSenha: ${testUserSuccessInfo.senha}`);
+                          showToast('Credenciais copiadas!', 'success');
+                        }}
+                        className="px-3 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                        title="Copiar e-mail e senha"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
+
+                {testUserSuccessInfo && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
+                    <div>
+                      <strong>Usuário criado no Firebase Auth e Firestore com sucesso!</strong>
+                      <p className="text-[11px] font-mono mt-0.5">
+                        Login: <strong>{testUserSuccessInfo.email}</strong> • Senha gerada: <strong>{testUserSuccessInfo.senha}</strong>
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Guia de Teste Passo a Passo */}

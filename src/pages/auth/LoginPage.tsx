@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   UtensilsCrossed,
@@ -18,8 +18,18 @@ import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE, getWhatsAppSupportLink } f
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login, sendPasswordReset } = useAuth();
+  const { currentUser, loading: authLoading, login, sendPasswordReset } = useAuth();
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (!authLoading && currentUser) {
+      if (isMasterRole(currentUser.role)) {
+        navigate('/admin', { replace: true });
+      } else if (currentUser.storeId) {
+        navigate('/painel', { replace: true });
+      }
+    }
+  }, [currentUser, authLoading, navigate]);
 
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');

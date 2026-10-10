@@ -127,8 +127,14 @@ export const PanelLayout: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    try {
+      clearActiveStore();
+      await logout();
+      showToast('Sessão encerrada com sucesso.', 'info');
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    }
+    navigate('/entrar');
   };
 
   const navItems = [
@@ -323,15 +329,26 @@ export const PanelLayout: React.FC = () => {
 
           {/* Usuário e Sair */}
           <div className="pt-2 border-t border-neutral-200 flex items-center justify-between text-xs text-neutral-600">
-            <span className="truncate max-w-[120px]" title={currentUser?.email}>
-              {currentUser?.nome || currentUser?.email}
-            </span>
+            <div className="flex items-center gap-2 min-w-0 pr-1">
+              <div className="w-6 h-6 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-[11px] text-neutral-700 flex-shrink-0">
+                {(currentUser?.nome || currentUser?.email || 'U')[0].toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-neutral-800 text-[11px] truncate block leading-tight">
+                  {currentUser?.nome || 'Proprietário'}
+                </span>
+                <span className="text-[10px] text-neutral-500 font-mono truncate block leading-tight" title={currentUser?.email}>
+                  {currentUser?.email}
+                </span>
+              </div>
+            </div>
             <button
               onClick={handleLogout}
-              className="p-1.5 hover:bg-neutral-200 rounded-lg text-neutral-500 hover:text-rose-600 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-lg text-xs font-bold transition-colors cursor-pointer flex-shrink-0"
               title="Sair da Conta"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair</span>
             </button>
           </div>
         </div>
@@ -423,6 +440,16 @@ export const PanelLayout: React.FC = () => {
               <span>Ver Cardápio</span>
               <ExternalLink className="w-3 h-3" />
             </a>
+
+            {/* Botão Sair no Cabeçalho Superior */}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-rose-50 text-neutral-700 hover:text-rose-700 border border-neutral-200 hover:border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+              title="Sair do painel e encerrar sessão"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair</span>
+            </button>
           </div>
         </header>
 
@@ -543,9 +570,10 @@ export const PanelLayout: React.FC = () => {
               </a>
               <button
                 onClick={handleLogout}
-                className="w-full py-2 text-center bg-rose-50 text-rose-700 rounded-xl text-xs font-bold block"
+                className="w-full py-2.5 text-center bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
-                Sair da Conta
+                <LogOut className="w-4 h-4" />
+                <span>Sair da Conta</span>
               </button>
             </div>
           </div>

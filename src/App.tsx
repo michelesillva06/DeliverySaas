@@ -74,8 +74,14 @@ const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
     );
   }
 
-  if (!currentUser || !isMasterRole(currentUser.role)) {
+  // Usuário não autenticado não pode acessar
+  if (!currentUser) {
     return <Navigate to="/entrar" replace />;
+  }
+
+  // OWNER não pode acessar rotas MASTER (redireciona para o próprio painel)
+  if (!isMasterRole(currentUser.role)) {
+    return <Navigate to="/painel" replace />;
   }
 
   return <>{children}</>;

@@ -29,6 +29,7 @@ import {
   Send,
   Smartphone,
   Crown,
+  LogOut,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
@@ -56,6 +57,7 @@ import { formatCurrency, getDefaultHorarios } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { SUPPORT_WHATSAPP } from '../../lib/constants';
 import { useActiveStore } from '../../services/activeStoreContext';
+import { useAuth } from '../../services/authContext';
 
 // Função para gerar senha inicial forte (10 caracteres, sem 0/O/l/1)
 export function generateStrongPassword(length = 10): string {
@@ -80,6 +82,17 @@ export const SuperAdminPage: React.FC = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const { setActiveStoreId } = useActiveStore();
+  const { currentUser, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      showToast('Sessão encerrada com sucesso.', 'info');
+    } catch (err) {
+      console.error('Erro ao encerrar sessão:', err);
+    }
+    navigate('/entrar');
+  };
 
   const [stores, setStores] = useState<Store[]>([]);
   const [saasConfig, setSaasConfig] = useState<SaasConfig | null>(null);
@@ -843,12 +856,23 @@ export const SuperAdminPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 text-xs">
-          <Link
-            to="/painel"
-            className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl font-bold transition-colors"
+          <div className="hidden sm:flex flex-col text-right">
+            <span className="font-bold text-neutral-200 text-xs leading-tight">
+              {currentUser?.nome || 'Administrador Master'}
+            </span>
+            <span className="text-[10px] text-neutral-400 font-mono">
+              {currentUser?.email || 'comercial@pedeai.com.br'}
+            </span>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-200 rounded-xl font-bold transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+            title="Sair do Painel Master"
           >
-            Ir para Painel do Lojista
-          </Link>
+            <LogOut className="w-4 h-4 text-rose-400" />
+            <span>Sair</span>
+          </button>
         </div>
       </header>
 

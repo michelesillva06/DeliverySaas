@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { UserProfile, isMasterRole } from '../types';
 
@@ -361,6 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     try {
       sessionStorage.removeItem('pedeai_active_store_id');
+      localStorage.removeItem('pedeai_active_store_id');
     } catch {}
     setCurrentUser(null);
     setFirebaseUser(null);

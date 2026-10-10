@@ -6,9 +6,9 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { UserProfile } from '../types';
+import { UserProfile, isMasterRole } from '../types';
 
 export interface LoginResult {
   success: boolean;
@@ -68,11 +68,20 @@ export function formatFirebaseAuthError(err: any): string {
   return code ? `Erro na autenticação (${code}).` : 'Ocorreu um erro ao processar sua autenticação.';
 }
 
+const LOCAL_STORAGE_USER_KEY = 'pedeai_custom_auth_user';
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   // Anonymous customer UID per device
@@ -93,23 +102,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (snap.exists()) {
         const profile = snap.data() as UserProfile;
+        
+        // Bloquear usuário desativado
+        if (profile.ativo === false) {
+          console.warn('[Auth Flow] Conta desativada pelo administrador Master:', profile.email);
+          await signOut(auth);
+          localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+          setCurrentUser(null);
+          return null;
+        }
+
+        // Se for o e-mail master padrão, garante role superadmin
+        if (profile.email?.toLowerCase() === 'comercial@pedeai.com.br' || profile.email?.toLowerCase() === 'master@delivery.com') {
+          profile.role = 'superadmin';
+        }
+
         console.log('[Auth Flow] Perfil users/' + user.uid + ' encontrado:', {
           uid: profile.uid,
           email: profile.email,
           nome: profile.nome,
           role: profile.role,
           storeId: profile.storeId || 'NENHUM',
+          ativo: profile.ativo ?? true,
         });
+
+        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(profile));
         setCurrentUser(profile);
         return profile;
       } else {
         console.log('[Auth Flow] Documento users/' + user.uid + ' NÃO existe no Firestore.');
+        // Se for master padrão autenticado no Auth mas sem doc ainda
+        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br') {
+          const masterProfile: UserProfile = {
+            uid: user.uid,
+            email: user.email,
+            nome: 'Administrador Master',
+            role: 'superadmin',
+            ativo: true,
+          };
+          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(masterProfile));
+          setCurrentUser(masterProfile);
+          return masterProfile;
+        }
+
+        localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
         setCurrentUser(null);
         return null;
       }
     } catch (err) {
       console.error('[Auth Flow] Erro ao ler users/' + user.uid + ' do Firestore:', err);
-      setCurrentUser(null);
       return null;
     }
   };
@@ -118,12 +159,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('[Auth Flow] onAuthStateChanged disparado:', user ? `UID: ${user.uid} (${user.email})` : 'Usuário deslogado');
+      console.log('[Auth Flow] onAuthStateChanged disparado:', user ? `UID: ${user.uid} (${user.email})` : 'Usuário Firebase deslogado');
       setFirebaseUser(user);
       if (user) {
         await loadUserProfile(user);
       } else {
-        setCurrentUser(null);
+        // Se não há usuário Firebase Auth, verificar se há sessão em cache de usuário administrativo/temporário
+        const cachedRaw = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+        if (cachedRaw) {
+          try {
+            const cached = JSON.parse(cachedRaw) as UserProfile;
+            if (cached?.uid) {
+              const snap = await getDoc(doc(db, 'users', cached.uid));
+              if (snap.exists()) {
+                const fresh = snap.data() as UserProfile;
+                if (fresh.ativo === false) {
+                  localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+                  if (isMounted) setCurrentUser(null);
+                } else {
+                  if (isMounted) setCurrentUser(fresh);
+                }
+              } else {
+                localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+                if (isMounted) setCurrentUser(null);
+              }
+            }
+          } catch {
+            localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+            if (isMounted) setCurrentUser(null);
+          }
+        } else {
+          if (isMounted) setCurrentUser(null);
+        }
       }
       if (isMounted) {
         setLoading(false);
@@ -137,37 +204,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshUserProfile = async (): Promise<UserProfile | null> => {
-    if (!auth.currentUser) return null;
-    return await loadUserProfile(auth.currentUser);
+    if (auth.currentUser) {
+      return await loadUserProfile(auth.currentUser);
+    }
+    if (currentUser?.uid) {
+      const snap = await getDoc(doc(db, 'users', currentUser.uid));
+      if (snap.exists()) {
+        const fresh = snap.data() as UserProfile;
+        if (fresh.ativo === false) {
+          await logout();
+          return null;
+        }
+        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(fresh));
+        setCurrentUser(fresh);
+        return fresh;
+      }
+    }
+    return null;
   };
 
   const login = async (email: string, senha: string): Promise<LoginResult> => {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanSenha = senha.trim();
     console.log('[Auth Flow] Iniciando login com e-mail/senha:', cleanEmail);
+
+    // 1. Tentar primeiro via Firebase Auth oficial
     try {
-      const cred = await signInWithEmailAndPassword(auth, cleanEmail, senha);
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanSenha);
       console.log('[Auth Flow] Login com e-mail/senha aprovado pelo Firebase Auth. UID:', cred.user.uid);
       const profile = await loadUserProfile(cred.user);
 
       if (!profile) {
+        // Fallback básico se perfil não foi retornado mas autenticou
+        const basicProfile: UserProfile = {
+          uid: cred.user.uid,
+          email: cred.user.email || cleanEmail,
+          nome: 'Usuário',
+          role: cleanEmail === 'comercial@pedeai.com.br' ? 'superadmin' : 'owner',
+          ativo: true,
+        };
+        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(basicProfile));
+        setCurrentUser(basicProfile);
+        return { success: true, user: basicProfile };
+      }
+
+      if (profile.ativo === false) {
+        await signOut(auth);
+        localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+        setCurrentUser(null);
         return {
-          success: true,
-          user: {
-            uid: cred.user.uid,
-            email: cred.user.email || cleanEmail,
-            nome: 'Usuário',
-            role: 'owner',
-          },
+          success: false,
+          message: 'Esta conta de usuário foi desativada pelo administrador Master. Entre em contato com o suporte.',
         };
       }
 
       return { success: true, user: profile };
     } catch (err: any) {
-      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found' || err?.code === 'auth/wrong-password') {
-        console.warn('[Auth Flow] Login recusado pelo Firebase Auth (credenciais incorretas):', cleanEmail);
-      } else {
-        console.error('[Auth Flow] Erro no signInWithEmailAndPassword:', err);
+      // 2. Se falhar no Firebase Auth (por exemplo credencial inválida, usuário criado diretamente no Firestore, ou senha temporária emitida pelo Master)
+      console.warn('[Auth Flow] Firebase Auth não aceitou credencial diretamente. Verificando perfil no Firestore...');
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+          const userDoc = snap.docs[0].data() as UserProfile;
+
+          // Verificar se a conta está desativada
+          if (userDoc.ativo === false) {
+            return {
+              success: false,
+              message: 'Esta conta de usuário foi desativada pelo administrador Master. Entre em contato com o suporte.',
+            };
+          }
+
+          // Verificar se a senha informada bate com senhaTemporaria ou senha salva
+          const matchTemp = userDoc.senhaTemporaria && userDoc.senhaTemporaria === cleanSenha;
+          const matchPass = userDoc.senha && userDoc.senha === cleanSenha;
+
+          if (matchTemp || matchPass) {
+            console.log('[Auth Flow] Login autenticado com sucesso via credencial administrativa para:', cleanEmail);
+            localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userDoc));
+            setCurrentUser(userDoc);
+            return { success: true, user: userDoc };
+          }
+        }
+      } catch (firestoreErr) {
+        console.error('[Auth Flow] Erro ao consultar perfil no Firestore:', firestoreErr);
       }
+
+      // Retorna erro amigável formatado
       return {
         success: false,
         errorCode: err?.code,
@@ -186,7 +311,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await sendPasswordResetEmail(auth, cleanEmail);
       return {
         success: true,
-        message: 'Link de redefinição de senha enviado para seu e-mail! Verifique sua caixa de entrada e spam.',
+        message: 'Link oficial de redefinição de senha enviado para seu e-mail! Verifique sua caixa de entrada e spam.',
       };
     } catch (err: any) {
       console.error('[Auth Flow] Erro no sendPasswordResetEmail:', err);
@@ -204,6 +329,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('[Auth Flow] Erro ao deslogar do Firebase Auth:', err);
     }
+    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+    try {
+      sessionStorage.removeItem('pedeai_active_store_id');
+    } catch {}
     setCurrentUser(null);
     setFirebaseUser(null);
   };

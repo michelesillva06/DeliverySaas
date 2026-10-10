@@ -14,3 +14,25 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Estilos de Impressão Térmica Profissional */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Oculta interface do sistema para garantir impressão limpa e sem elementos residuais */
+  nav, header, aside, footer, button, .no-print, [role="dialog"]:not(#area-impressao):not(#modal-print-container) {
+    display: none !important;
+  }
+}

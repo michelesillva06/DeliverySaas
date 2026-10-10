@@ -809,9 +809,95 @@ export async function getUserProfileFromFirestore(uid: string): Promise<UserProf
   }
 }
 
+export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as UserProfile;
+    }
+    return null;
+  } catch (error) {
+    console.error('Erro ao buscar perfil por e-mail:', error);
+    return null;
+  }
+}
+
+export async function getUserProfileByStoreId(storeId: string): Promise<UserProfile | null> {
+  try {
+    const q = query(collection(db, 'users'), where('storeId', '==', storeId));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as UserProfile;
+    }
+    return null;
+  } catch (error) {
+    console.error('Erro ao buscar perfil por storeId:', error);
+    return null;
+  }
+}
+
+export function subscribeToAllUsers(callback: (users: UserProfile[]) => void): Unsubscribe {
+  const colRef = collection(db, 'users');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const list = snap.docs.map((d) => d.data() as UserProfile);
+      callback(list);
+    },
+    (err) => {
+      console.warn('Erro ao escutar usuários:', err);
+      callback([]);
+    }
+  );
+}
+
+export async function updateUserStatusInFirestore(uid: string, ativo: boolean): Promise<void> {
+  const docRef = doc(db, 'users', uid);
+  await updateDoc(docRef, { ativo, atualizadoEm: new Date().toISOString() });
+}
+
+export async function updateUserPasswordInFirestore(uid: string, novaSenha: string): Promise<void> {
+  const docRef = doc(db, 'users', uid);
+  await updateDoc(docRef, {
+    senhaTemporaria: novaSenha,
+    atualizadoEm: new Date().toISOString(),
+  });
+}
+
+export async function updateUserProfileInFirestore(uid: string, data: Partial<UserProfile>): Promise<void> {
+  const docRef = doc(db, 'users', uid);
+  await updateDoc(docRef, limparObjeto({ ...data, atualizadoEm: new Date().toISOString() }));
+}
+
 export async function saveUserProfileToFirestore(user: UserProfile): Promise<void> {
   const docRef = doc(db, 'users', user.uid);
-  await setDoc(docRef, limparObjeto(user), { merge: true });
+  const dataToSave = {
+    ...user,
+    ativo: user.ativo !== undefined ? user.ativo : true,
+    atualizadoEm: new Date().toISOString(),
+  };
+  await setDoc(docRef, limparObjeto(dataToSave), { merge: true });
+}
+
+export function subscribeToSaasPaymentRequestsByStore(
+  storeId: string,
+  callback: (reqs: SaasPaymentRequest[]) => void
+): Unsubscribe {
+  const q = query(collection(db, 'saas_payment_requests'), where('storeId', '==', storeId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SaasPaymentRequest));
+      list.sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+      callback(list);
+    },
+    (err) => {
+      console.warn('Erro ao escutar solicitações da loja:', err);
+      callback([]);
+    }
+  );
 }
 
 // ==========================================

@@ -88,6 +88,7 @@ export interface Store {
   // Impressão Térmica
   imprimirAutoAoAceitar?: boolean;
   larguraImpressora?: '80mm' | '58mm';
+  viasImpressao?: 'cozinha' | 'entrega' | 'ambas';
   
   nextOrderNumber: number;
   mensagensWhatsapp: StoreWhatsAppTemplates;
@@ -199,6 +200,7 @@ export interface SelectedOption {
   opcaoId: string;
   nome: string;
   preco: number;
+  qtd?: number;
 }
 
 export interface OrderItem {
@@ -265,14 +267,32 @@ export interface Order {
   teste?: boolean;
 }
 
+export type UserRole = 'master' | 'superadmin' | 'owner' | 'lojista';
+
+export function isMasterRole(role?: string | null): boolean {
+  if (!role) return false;
+  const normalized = role.toLowerCase().trim();
+  return normalized === 'master' || normalized === 'superadmin';
+}
+
+export function isOwnerRole(role?: string | null): boolean {
+  if (!role) return false;
+  const normalized = role.toLowerCase().trim();
+  return normalized === 'owner' || normalized === 'lojista';
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
   nome: string;
-  role: 'owner' | 'lojista' | 'superadmin';
+  role: UserRole;
   storeId?: string;
   senha?: string;
+  senhaTemporaria?: string;
+  telefone?: string;
+  ativo?: boolean; // padrão: true. Se false, o lojista não consegue logar
   criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 export interface SaasPlanDetails {

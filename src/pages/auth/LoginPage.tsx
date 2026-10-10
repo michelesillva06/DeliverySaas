@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
 import { useToast } from '../../components/Toast';
+import { isMasterRole } from '../../types';
 import { SUPPORT_WHATSAPP, SUPPORT_MESSAGE_NEW_STORE, getWhatsAppSupportLink } from '../../lib/constants';
 
 export const LoginPage: React.FC = () => {
@@ -45,14 +46,14 @@ export const LoginPage: React.FC = () => {
     try {
       const res = await login(email, senha);
       if (res.success) {
-        if (res.user?.role === 'superadmin') {
-          showToast('Login de administrador realizado com sucesso!', 'success');
+        if (isMasterRole(res.user?.role)) {
+          showToast('Login de Administrador Master realizado com sucesso!', 'success');
           navigate('/admin');
         } else if (res.user?.storeId) {
-          showToast('Login realizado com sucesso!', 'success');
+          showToast(`Bem-vindo, ${res.user.nome || 'Lojista'}!`, 'success');
           navigate('/painel');
         } else {
-          setError('Sua conta não possui uma loja vinculada. Entre em contato com a equipe de vendas.');
+          setError('Sua conta não possui uma loja vinculada. Entre em contato com a equipe.');
         }
       } else {
         setError(res.message || 'E-mail ou senha incorretos.');
@@ -188,6 +189,47 @@ export const LoginPage: React.FC = () => {
             )}
           </button>
         </form>
+
+        {/* Atalhos para Teste Rápido (SaaS Multiempresa) */}
+        <div className="pt-3 pb-1 border-t border-neutral-800/80">
+          <p className="text-[11px] font-bold text-neutral-400 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🧪</span>
+            <span>Acessos de Teste (1-Clique):</span>
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('teste@delivery.com');
+                setSenha('123456');
+              }}
+              className="p-2.5 bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 rounded-xl text-left transition-colors cursor-pointer group"
+            >
+              <div className="text-[11px] font-bold text-white group-hover:text-rose-400 flex items-center justify-between">
+                <span>Dono / OWNER</span>
+                <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1 rounded font-mono">Loja</span>
+              </div>
+              <div className="text-[10px] text-neutral-400 truncate mt-0.5">teste@delivery.com</div>
+              <div className="text-[10px] text-neutral-500 font-mono">Senha: 123456</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('comercial@pedeai.com.br');
+                setSenha('admin123');
+              }}
+              className="p-2.5 bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 rounded-xl text-left transition-colors cursor-pointer group"
+            >
+              <div className="text-[11px] font-bold text-white group-hover:text-amber-400 flex items-center justify-between">
+                <span>Admin / MASTER</span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded font-mono">Total</span>
+              </div>
+              <div className="text-[10px] text-neutral-400 truncate mt-0.5">comercial@pedeai.com.br</div>
+              <div className="text-[10px] text-neutral-500 font-mono">Acesso Master</div>
+            </button>
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="pt-4 border-t border-neutral-800 text-center text-xs text-neutral-400">

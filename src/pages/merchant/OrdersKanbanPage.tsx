@@ -22,7 +22,11 @@ import {
 } from '../../services/firestoreService';
 import { formatCurrency, formatDateTime, notificarEntregadorWhatsApp } from '../../lib/formatters';
 import { OrderDetailModal } from '../../components/OrderDetailModal';
-import { imprimirTicketEntrega, dispararImpressaoSequencialAoAceitar } from '../../lib/impressao';
+import {
+  imprimirTicketCozinha,
+  imprimirTicketEntrega,
+  dispararImpressaoSequencialAoAceitar,
+} from '../../lib/impressao';
 import { playNewOrderAlert } from '../../lib/sound';
 import { useToast } from '../../components/Toast';
 
@@ -103,7 +107,11 @@ export const OrdersKanbanPage: React.FC = () => {
 
   const handlePrintReceipt = (e: React.MouseEvent, order: Order) => {
     e.stopPropagation();
-    imprimirTicketEntrega(order, store);
+    if (store.viasImpressao === 'cozinha') {
+      imprimirTicketCozinha(order, store);
+    } else {
+      imprimirTicketEntrega(order, store);
+    }
   };
 
   return (

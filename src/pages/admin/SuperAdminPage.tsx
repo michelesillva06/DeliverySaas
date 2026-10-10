@@ -24,11 +24,16 @@ import {
   Copy,
   RefreshCw,
   MessageCircle,
+  KeyRound,
+  UserX,
+  Send,
+  Smartphone,
+  Crown,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { firebaseConfig, auth } from '../../lib/firebase';
-import { Store, StoreStatus, SaasConfig, SaasPaymentRequest, StorePayment } from '../../types';
+import { Store, StoreStatus, SaasConfig, SaasPaymentRequest, StorePayment, UserProfile, isMasterRole } from '../../types';
 import {
   subscribeToAllStores,
   saveStoreToFirestore,
@@ -36,6 +41,12 @@ import {
   saveSaasConfigToFirestore,
   isSlugAvailableInFirestore,
   saveUserProfileToFirestore,
+  getUserProfileFromFirestore,
+  getUserProfileByStoreId,
+  getUserProfileByEmail,
+  updateUserStatusInFirestore,
+  updateUserPasswordInFirestore,
+  updateUserProfileInFirestore,
   addStorePaymentInFirestore,
   subscribeToSaasPaymentRequests,
   updateSaasPaymentRequestStatusInFirestore,
@@ -73,8 +84,29 @@ export const SuperAdminPage: React.FC = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [saasConfig, setSaasConfig] = useState<SaasConfig | null>(null);
   const [paymentRequests, setPaymentRequests] = useState<SaasPaymentRequest[]>([]);
-  const [tab, setTab] = useState<'lojas' | 'nova_loja' | 'financeiro' | 'solicitacoes' | 'config'>('lojas');
+  const [tab, setTab] = useState<'lojas' | 'nova_loja' | 'financeiro' | 'solicitacoes' | 'config' | 'teste'>('lojas');
   const [savingConfig, setSavingConfig] = useState(false);
+
+  // Estado para Gerenciar Acesso do Usuário (OWNER)
+  const [managingUserStore, setManagingUserStore] = useState<Store | null>(null);
+  const [managingUserProfile, setManagingUserProfile] = useState<UserProfile | null>(null);
+  const [userFormNome, setUserFormNome] = useState('');
+  const [userFormEmail, setUserFormEmail] = useState('');
+  const [userFormTelefone, setUserFormTelefone] = useState('');
+  const [userFormNovaSenha, setUserFormNovaSenha] = useState('');
+  const [userFormAtivo, setUserFormAtivo] = useState(true);
+  const [userActionLoading, setUserActionLoading] = useState(false);
+  const [userAccessCopied, setUserAccessCopied] = useState(false);
+
+  // Estado para Criação / Reset do Usuário de Teste
+  const [creatingTestStore, setCreatingTestStore] = useState(false);
+  const [testUserSuccessInfo, setTestUserSuccessInfo] = useState<{
+    email: string;
+    senha: string;
+    lojaNome: string;
+    slug: string;
+    storeId: string;
+  } | null>(null);
 
   // Estado para Nova Loja
   const [nome, setNome] = useState('');
@@ -340,6 +372,341 @@ export const SuperAdminPage: React.FC = () => {
     }
   };
 
+  // Instância Auth Secundária (Permite criar/gerenciar credenciais sem deslogar o Master)
+  const getSecondaryAuthInstance = () => {
+    const secondaryApp =
+      getApps().find((app) => app.name === 'secondary') || initializeApp(firebaseConfig, 'secondary');
+    return getAuth(secondaryApp);
+  };
+
+  // Abrir Modal de Gestão de Acesso do Usuário (OWNER)
+  const handleOpenManageUser = async (store: Store) => {
+    setManagingUserStore(store);
+    setUserFormNome(store.nomeResponsavel || '');
+    setUserFormEmail(store.emailResponsavel || '');
+    setUserFormTelefone(store.whatsapp || '');
+    setUserFormNovaSenha('');
+    setUserAccessCopied(false);
+    setUserActionLoading(true);
+
+    try {
+      let profile: UserProfile | null = null;
+      if (store.ownerUid) {
+        profile = await getUserProfileFromFirestore(store.ownerUid);
+      }
+      if (!profile && store.id) {
+        profile = await getUserProfileByStoreId(store.id);
+      }
+      if (!profile && store.emailResponsavel) {
+        profile = await getUserProfileByEmail(store.emailResponsavel);
+      }
+
+      setManagingUserProfile(profile);
+      if (profile) {
+        setUserFormNome(profile.nome || store.nomeResponsavel || '');
+        setUserFormEmail(profile.email || store.emailResponsavel || '');
+        setUserFormTelefone(profile.telefone || store.whatsapp || '');
+        setUserFormAtivo(profile.ativo !== false);
+      } else {
+        setUserFormAtivo(true);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar perfil do lojista:', err);
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  // Salvar alterações nos dados cadastrais do usuário (Nome, E-mail, Telefone)
+  const handleSaveUserData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managingUserStore) return;
+    setUserActionLoading(true);
+
+    try {
+      const cleanNome = userFormNome.trim();
+      const cleanEmail = userFormEmail.trim().toLowerCase();
+      const cleanTelefone = userFormTelefone.trim();
+
+      // 1. Atualizar na Store
+      const updatedStore: Store = {
+        ...managingUserStore,
+        nomeResponsavel: cleanNome,
+        emailResponsavel: cleanEmail,
+        whatsapp: cleanTelefone,
+      };
+      await saveStoreToFirestore(updatedStore);
+      setManagingUserStore(updatedStore);
+
+      // 2. Atualizar ou Criar documento em users
+      const targetUid = managingUserProfile?.uid || managingUserStore.ownerUid || `user_${managingUserStore.id}`;
+      const updatedProfile: UserProfile = {
+        uid: targetUid,
+        email: cleanEmail,
+        nome: cleanNome,
+        role: 'owner',
+        storeId: managingUserStore.id,
+        telefone: cleanTelefone,
+        ativo: userFormAtivo,
+        criadoEm: managingUserProfile?.criadoEm || new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        ...(managingUserProfile?.senha ? { senha: managingUserProfile.senha } : {}),
+        ...(managingUserProfile?.senhaTemporaria ? { senhaTemporaria: managingUserProfile.senhaTemporaria } : {}),
+      };
+      await saveUserProfileToFirestore(updatedProfile);
+      setManagingUserProfile(updatedProfile);
+
+      showToast('Dados do usuário responsável atualizados com sucesso!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Erro ao atualizar dados do usuário: ' + (err.message || err), 'error');
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  // Alternar Status do Acesso (Ativar / Desativar Usuário)
+  const handleToggleUserStatus = async () => {
+    if (!managingUserStore) return;
+    setUserActionLoading(true);
+
+    try {
+      const newStatus = !userFormAtivo;
+      const targetUid = managingUserProfile?.uid || managingUserStore.ownerUid || `user_${managingUserStore.id}`;
+
+      await saveUserProfileToFirestore({
+        uid: targetUid,
+        email: userFormEmail.trim().toLowerCase() || managingUserStore.emailResponsavel || '',
+        nome: userFormNome.trim() || managingUserStore.nomeResponsavel || '',
+        role: 'owner',
+        storeId: managingUserStore.id,
+        telefone: userFormTelefone.trim() || managingUserStore.whatsapp || '',
+        ativo: newStatus,
+        criadoEm: managingUserProfile?.criadoEm || new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      });
+
+      setUserFormAtivo(newStatus);
+      if (managingUserProfile) {
+        setManagingUserProfile({ ...managingUserProfile, ativo: newStatus });
+      }
+
+      showToast(
+        newStatus
+          ? 'Acesso ativado! O usuário agora pode entrar no painel normalmente.'
+          : 'Acesso desativado! O usuário foi bloqueado e não conseguirá entrar.',
+        newStatus ? 'success' : 'info'
+      );
+    } catch (err: any) {
+      showToast('Erro ao alterar status do usuário: ' + (err.message || err), 'error');
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  // Redefinir / Criar Nova Senha Temporária
+  const handleResetUserPassword = async () => {
+    if (!managingUserStore) return;
+    const cleanPassword = userFormNovaSenha.trim();
+
+    if (!cleanPassword || cleanPassword.length < 6) {
+      showToast('A nova senha deve ter no mínimo 6 caracteres.', 'error');
+      return;
+    }
+
+    setUserActionLoading(true);
+    try {
+      const targetEmail = (userFormEmail || managingUserStore.emailResponsavel || '').trim().toLowerCase();
+      const targetUid = managingUserProfile?.uid || managingUserStore.ownerUid || `user_${managingUserStore.id}`;
+
+      const updatedProfile: UserProfile = {
+        uid: targetUid,
+        email: targetEmail,
+        nome: userFormNome || managingUserStore.nomeResponsavel || '',
+        role: 'owner',
+        storeId: managingUserStore.id,
+        senhaTemporaria: cleanPassword,
+        senha: cleanPassword,
+        ativo: userFormAtivo,
+        atualizadoEm: new Date().toISOString(),
+      };
+      await saveUserProfileToFirestore(updatedProfile);
+      setManagingUserProfile(updatedProfile);
+
+      try {
+        const secAuth = getSecondaryAuthInstance();
+        await createUserWithEmailAndPassword(secAuth, targetEmail, cleanPassword);
+        await signOut(secAuth);
+      } catch (authErr: any) {
+        console.warn('Firebase Auth secundário aviso:', authErr?.code);
+      }
+
+      showToast(`Nova senha definida com sucesso para ${targetEmail}!`, 'success');
+      setUserAccessCopied(false);
+    } catch (err: any) {
+      console.error(err);
+      showToast('Erro ao redefinir senha: ' + (err.message || err), 'error');
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  // Enviar link oficial de redefinição de senha por e-mail (Firebase)
+  const handleSendResetPasswordEmail = async () => {
+    const cleanEmail = (userFormEmail || managingUserStore?.emailResponsavel || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      showToast('O usuário não possui um e-mail válido cadastrado.', 'error');
+      return;
+    }
+    setUserActionLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      showToast(`Link oficial de redefinição enviado com sucesso para ${cleanEmail}!`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Erro ao enviar e-mail de redefinição: ' + (err.message || err), 'error');
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  // Copiar Dados Completos de Acesso
+  const handleCopyUserAccess = () => {
+    if (!managingUserStore) return;
+    const origin = window.location.origin;
+    const loginUrl = `${origin}/#/entrar`;
+    const targetEmail = userFormEmail || managingUserStore.emailResponsavel || '';
+    const senhaTexto = userFormNovaSenha || managingUserProfile?.senhaTemporaria || '(A senha definida no cadastro)';
+
+    const text = `🍽️ *ACESSO AO PAINEL DO DELIVERY*\n\n` +
+      `*Estabelecimento:* ${managingUserStore.nome}\n` +
+      `*Responsável:* ${userFormNome || managingUserStore.nomeResponsavel || 'Lojista'}\n` +
+      `*Link do Painel:* ${loginUrl}\n` +
+      `*E-mail de Acesso:* ${targetEmail}\n` +
+      `*Senha de Acesso:* ${senhaTexto}\n` +
+      `*Status da Conta:* ${userFormAtivo ? 'Ativa ✅' : 'Desativada ⛔'}\n\n` +
+      `_Acesse o painel para gerenciar seus pedidos, cardápio e entregas._`;
+
+    navigator.clipboard.writeText(text);
+    setUserAccessCopied(true);
+    showToast('Dados de acesso copiados para a área de transferência!', 'success');
+    setTimeout(() => setUserAccessCopied(false), 4000);
+  };
+
+  // Criar / Resetar Restaurante e Usuário de Teste (1-Clique)
+  const handleCreateOrResetTestRestaurant = async () => {
+    setCreatingTestStore(true);
+    try {
+      const testEmail = 'teste@delivery.com';
+      const testSenha = '123456';
+      const testNomeLoja = 'Restaurante Teste';
+      const testSlug = 'restaurante-teste';
+
+      let targetStore = stores.find((s) => s.slug === testSlug || s.emailResponsavel?.toLowerCase() === testEmail);
+      let storeId = targetStore?.id || `store_teste_${Date.now().toString(36)}`;
+      let ownerUid = targetStore?.ownerUid || `user_${storeId}`;
+
+      try {
+        const secAuth = getSecondaryAuthInstance();
+        await createUserWithEmailAndPassword(secAuth, testEmail, testSenha);
+        await signOut(secAuth);
+      } catch (authErr: any) {
+        console.log('Usuário Auth teste já existia ou criado:', authErr?.code);
+      }
+
+      const userProfile: UserProfile = {
+        uid: ownerUid,
+        email: testEmail,
+        nome: testNomeLoja,
+        role: 'owner',
+        storeId,
+        telefone: '5592999999999',
+        senha: testSenha,
+        senhaTemporaria: testSenha,
+        ativo: true,
+        criadoEm: targetStore?.criadoEm || new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      };
+      await saveUserProfileToFirestore(userProfile);
+
+      const now = new Date();
+      const vencimento = new Date(now.getFullYear(), now.getMonth() + 1, 10, 23, 59, 59);
+
+      const storeData: Store = {
+        ...(targetStore || {}),
+        id: storeId,
+        nome: testNomeLoja,
+        slug: testSlug,
+        logo: targetStore?.logo || '',
+        capa: targetStore?.capa || '',
+        corPrimaria: '#e11d48',
+        endereco: 'Av. Principal dos Testes, 1000 - Centro',
+        whatsapp: '5592999999999',
+        nomeResponsavel: testNomeLoja,
+        emailResponsavel: testEmail,
+        plano: 'Profissional',
+        valorImplantacao: 0,
+        valorMensalidade: 99.9,
+        diaVencimento: 10,
+        dataVencimento: vencimento.toISOString(),
+        status: 'ativa',
+        pixKey: 'teste@delivery.com',
+        pixKeyType: 'email',
+        pixReceiverName: 'RESTAURANTE TESTE LTDA',
+        pixCity: 'MANAUS',
+        pagamentos: {
+          pix: true,
+          dinheiro: true,
+          cartaoEntrega: true,
+          whatsapp: true,
+        },
+        horarios: targetStore?.horarios || getDefaultHorarios(),
+        aberta: true,
+        pedidoMinimo: 0,
+        tempoEstimadoMin: 35,
+        tempoEstimadoRetiradaMin: 20,
+        aceitaEntrega: true,
+        aceitaRetirada: true,
+        nextOrderNumber: targetStore?.nextOrderNumber || 1,
+        ownerUid,
+        criadoEm: targetStore?.criadoEm || new Date().toISOString(),
+        mensagensWhatsapp: targetStore?.mensagensWhatsapp || {
+          aceito: 'Olá! Seu pedido foi aceito.',
+          preparo: 'Olá! Seu pedido está em preparo.',
+          saiuEntrega: 'Olá! Seu pedido saiu para entrega.',
+          prontoRetirada: 'Olá! Seu pedido está pronto para retirada.',
+          cancelado: 'Olá! Seu pedido foi cancelado.',
+        },
+        descontoGeral: 0,
+        categorias: targetStore?.categorias || [],
+        produtos: targetStore?.produtos || [],
+        zonasEntrega: targetStore?.zonasEntrega || [],
+        formasPagamento: {
+          pix: { ativo: true, instrucoes: 'Pagamento via QR Code Pix Teste' },
+          cartaoNaEntrega: { ativo: true },
+          dinheiro: { ativo: true, permitirTroco: true },
+        },
+      };
+
+      await saveStoreToFirestore(storeData);
+
+      setTestUserSuccessInfo({
+        email: testEmail,
+        senha: testSenha,
+        lojaNome: testNomeLoja,
+        slug: testSlug,
+        storeId,
+      });
+
+      showToast(`Usuário e Loja de Teste prontos! (${testEmail} / ${testSenha})`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Erro ao criar usuário de teste: ' + (err.message || err), 'error');
+    } finally {
+      setCreatingTestStore(false);
+    }
+  };
+
   const handleSaveEditStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStore) return;
@@ -584,166 +951,249 @@ export const SuperAdminPage: React.FC = () => {
             <Settings className="w-4 h-4" />
             <span>Chave Pix & Suporte SaaS</span>
           </button>
+
+          <button
+            onClick={() => setTab('teste')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all cursor-pointer ${
+              tab === 'teste' ? 'bg-rose-600 text-white shadow-sm' : 'text-neutral-600 hover:text-rose-600'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-rose-300" />
+            <span>Ambiente de Teste (1-Clique)</span>
+          </button>
         </div>
 
         {/* TAB 1: LISTA DE LOJAS */}
         {tab === 'lojas' && (
-          <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs overflow-hidden">
-            <div className="p-4 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
-              <h2 className="font-bold text-sm text-neutral-800">Lojas Cadastradas</h2>
-              <button
-                onClick={() => setTab('nova_loja')}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Cadastrar Nova Loja</span>
-              </button>
+          <div className="space-y-4">
+            {/* Banner de Atalho para o Ambiente de Teste */}
+            <div className="p-4 bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900 text-white rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm border border-neutral-700/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center font-bold flex-shrink-0 text-lg">
+                  ⚡
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    <span>Validação de Acesso SaaS (Multiempresa)</span>
+                    <span className="text-[10px] bg-rose-600 text-white font-mono px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Perfil OWNER
+                    </span>
+                  </h3>
+                  <p className="text-xs text-neutral-300">
+                    Crie ou resete o restaurante de teste com 1 clique para testar o login isolado do lojista: <strong>teste@delivery.com</strong> (Senha: 123456).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={handleCreateOrResetTestRestaurant}
+                  disabled={creatingTestStore}
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{creatingTestStore ? 'Configurando...' : 'Criar / Resetar Usuário Teste'}</span>
+                </button>
+                <button
+                  onClick={() => setTab('teste')}
+                  className="px-3 py-2.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Ver Instruções
+                </button>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[700px]">
-                <thead>
-                  <tr className="bg-neutral-50/50 border-b border-neutral-200 font-bold text-neutral-500 uppercase tracking-wider text-[11px]">
-                    <th className="p-4 pl-6">Loja</th>
-                    <th className="p-4">Plano / Valor</th>
-                    <th className="p-4">Vencimento</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 pr-6 text-right">Ações do Administrador</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {stores.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-12 text-center text-neutral-400">
-                        Nenhuma loja cadastrada até o momento.
-                      </td>
-                    </tr>
-                  ) : (
-                    stores.map((s) => {
-                      const vence = s.dataVencimento ? new Date(s.dataVencimento) : null;
-                      const isExpired = s.status === 'vencida' || (vence !== null && vence < now && s.status !== 'ativa');
+            <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs overflow-hidden">
+              <div className="p-4 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+                <div>
+                  <h2 className="font-bold text-sm text-neutral-800">Lojas Cadastradas & Acessos</h2>
+                  <p className="text-[11px] text-neutral-500">
+                    Gerencie o estabelecimento, visualize como a loja e administre e-mails e senhas dos proprietários.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setTab('nova_loja')}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Cadastrar Nova Loja</span>
+                </button>
+              </div>
 
-                      return (
-                        <tr key={s.id} className="hover:bg-neutral-50/80 transition-colors">
-                          <td className="p-4 pl-6">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-neutral-600 flex-shrink-0">
-                                {s.logo ? (
-                                  <img src={s.logo} alt={s.nome} className="w-full h-full object-cover" />
-                                ) : (
-                                  s.nome.slice(0, 2).toUpperCase()
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                  <thead>
+                    <tr className="bg-neutral-50/50 border-b border-neutral-200 font-bold text-neutral-500 uppercase tracking-wider text-[11px]">
+                      <th className="p-4 pl-6">Loja</th>
+                      <th className="p-4">Responsável & Acesso (OWNER)</th>
+                      <th className="p-4">Plano / Valor</th>
+                      <th className="p-4">Vencimento</th>
+                      <th className="p-4">Status Loja</th>
+                      <th className="p-4 pr-6 text-right">Ações do Administrador</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {stores.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-12 text-center text-neutral-400">
+                          Nenhuma loja cadastrada até o momento.
+                        </td>
+                      </tr>
+                    ) : (
+                      stores.map((s) => {
+                        const vence = s.dataVencimento ? new Date(s.dataVencimento) : null;
+                        const isExpired = s.status === 'vencida' || (vence !== null && vence < now && s.status !== 'ativa');
+
+                        return (
+                          <tr key={s.id} className="hover:bg-neutral-50/80 transition-colors">
+                            <td className="p-4 pl-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-neutral-600 flex-shrink-0">
+                                  {s.logo ? (
+                                    <img src={s.logo} alt={s.nome} className="w-full h-full object-cover" />
+                                  ) : (
+                                    s.nome.slice(0, 2).toUpperCase()
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-neutral-900 text-sm">{s.nome}</span>
+                                    <a
+                                      href={`/#/${s.slug}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-neutral-400 hover:text-neutral-700"
+                                      title="Abrir cardápio"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                  <span className="text-[11px] text-neutral-400 block font-mono">
+                                    /{s.slug}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Informações de Acesso do Responsável */}
+                            <td className="p-4">
+                              <div className="space-y-0.5">
+                                <div className="font-bold text-neutral-800 text-xs">
+                                  {s.nomeResponsavel || 'Não informado'}
+                                </div>
+                                <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[190px]" title={s.emailResponsavel}>
+                                  {s.emailResponsavel || 'Sem e-mail'}
+                                </div>
+                                {s.whatsapp && (
+                                  <div className="text-[10px] text-neutral-400 flex items-center gap-1">
+                                    <Smartphone className="w-3 h-3 text-emerald-600" />
+                                    <span>{s.whatsapp}</span>
+                                  </div>
                                 )}
                               </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-neutral-900 text-sm">{s.nome}</span>
-                                  <a
-                                    href={`/#/${s.slug}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-neutral-400 hover:text-neutral-700"
-                                    title="Abrir cardápio"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                </div>
-                                <span className="text-[11px] text-neutral-400 block font-mono">
-                                  /{s.slug} • {s.emailResponsavel || 'Sem e-mail'}
-                                </span>
+                            </td>
+
+                            <td className="p-4">
+                              <div className="font-bold text-neutral-800">{s.plano || 'Profissional'}</div>
+                              <span className="text-[11px] text-neutral-500">
+                                {formatCurrency(s.valorMensalidade || 99.9)} / mês
+                              </span>
+                            </td>
+
+                            <td className="p-4">
+                              <div className="font-bold text-neutral-800">
+                                {vence ? vence.toLocaleDateString('pt-BR') : 'Não definida'}
                               </div>
-                            </div>
-                          </td>
+                              <span className="text-[11px] text-neutral-400">Dia Venc.: {s.diaVencimento || 10}</span>
+                            </td>
 
-                          <td className="p-4">
-                            <div className="font-bold text-neutral-800">{s.plano || 'Profissional'}</div>
-                            <span className="text-[11px] text-neutral-500">
-                              {formatCurrency(s.valorMensalidade || 99.9)} / mês
-                            </span>
-                          </td>
-
-                          <td className="p-4">
-                            <div className="font-bold text-neutral-800">
-                              {vence ? vence.toLocaleDateString('pt-BR') : 'Não definida'}
-                            </div>
-                            <span className="text-[11px] text-neutral-400">Dia Venc.: {s.diaVencimento || 10}</span>
-                          </td>
-
-                          <td className="p-4">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase ${
-                                s.status === 'ativa'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : isExpired || s.status === 'vencida'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : s.status === 'aguardando_ativacao'
-                                  ? 'bg-sky-100 text-sky-800'
-                                  : 'bg-neutral-200 text-neutral-800'
-                              }`}
-                            >
-                              {s.status === 'ativa' && <Check className="w-3 h-3 text-emerald-600" />}
-                              {(isExpired || s.status === 'vencida') && <AlertTriangle className="w-3 h-3 text-rose-600" />}
-                              {s.status}
-                            </span>
-                          </td>
-
-                          <td className="p-4 pr-6 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => {
-                                  setActiveStoreId(s.id);
-                                  navigate('/painel');
-                                }}
-                                className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                title="Acessar e gerenciar painel desta loja"
-                              >
-                                <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Gerenciar loja</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleOpenPaymentModal(s)}
-                                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                title="Lançar pagamento mensal ou implantação"
-                              >
-                                <DollarSign className="w-3.5 h-3.5" />
-                                <span>Pagar</span>
-                              </button>
-
-                              <button
-                                onClick={() => setEditingStore(s)}
-                                className="p-2 text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors cursor-pointer"
-                                title="Editar dados da loja"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-
-                              <button
-                                onClick={() => handleToggleBlockStore(s)}
-                                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                                  s.status === 'bloqueada'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                            <td className="p-4">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase ${
+                                  s.status === 'ativa'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : isExpired || s.status === 'vencida'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : s.status === 'aguardando_ativacao'
+                                    ? 'bg-sky-100 text-sky-800'
+                                    : 'bg-neutral-200 text-neutral-800'
                                 }`}
-                                title={s.status === 'bloqueada' ? 'Desbloquear Loja' : 'Bloquear Loja'}
                               >
-                                {s.status === 'bloqueada' ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                              </button>
+                                {s.status === 'ativa' && <Check className="w-3 h-3 text-emerald-600" />}
+                                {(isExpired || s.status === 'vencida') && <AlertTriangle className="w-3 h-3 text-rose-600" />}
+                                {s.status}
+                              </span>
+                            </td>
 
-                              <button
-                                onClick={() => setViewingPaymentsStore(s)}
-                                className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-[11px] transition-colors cursor-pointer"
-                                title="Ver extrato de pagamentos"
-                              >
-                                Extrato
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                            <td className="p-4 pr-6 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Entrar / Acessar Painel Como a Loja */}
+                                <button
+                                  onClick={() => {
+                                    setActiveStoreId(s.id);
+                                    navigate('/painel');
+                                  }}
+                                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                  title="Acessar painel e operar com todos os privilégios como esta loja"
+                                >
+                                  <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Acessar painel da loja</span>
+                                </button>
+
+                                {/* Gerenciar Usuário, E-mail, Senha e Acesso */}
+                                <button
+                                  onClick={() => handleOpenManageUser(s)}
+                                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                  title="Editar dados do usuário, redefinir senha temporária e ativar/desativar acesso"
+                                >
+                                  <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                                  <span>Gerenciar Acesso</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleOpenPaymentModal(s)}
+                                  className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Lançar pagamento mensal ou implantação"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  <span>Pagar</span>
+                                </button>
+
+                                <button
+                                  onClick={() => setEditingStore(s)}
+                                  className="p-2 text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors cursor-pointer"
+                                  title="Editar dados cadastrais da loja"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                  onClick={() => handleToggleBlockStore(s)}
+                                  className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                                    s.status === 'bloqueada'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                                  }`}
+                                  title={s.status === 'bloqueada' ? 'Desbloquear Loja' : 'Bloquear Loja'}
+                                >
+                                  {s.status === 'bloqueada' ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                                </button>
+
+                                <button
+                                  onClick={() => setViewingPaymentsStore(s)}
+                                  className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-[11px] transition-colors cursor-pointer"
+                                  title="Ver extrato de pagamentos"
+                                >
+                                  Extrato
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1198,6 +1648,124 @@ export const SuperAdminPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* TAB 6: AMBIENTE DE TESTE SAAS (1-CLIQUE) */}
+        {tab === 'teste' && (
+          <div className="space-y-6 max-w-4xl">
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-neutral-200 shadow-xs space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center font-bold text-2xl">
+                  ⚡
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-neutral-900">
+                    Ambiente de Testes Multiempresa (SaaS)
+                  </h2>
+                  <p className="text-xs text-neutral-500">
+                    Valide de forma prática o isolamento entre o <strong>Administrador Master</strong> e o <strong>Dono da Loja (OWNER)</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Card de Configuração do Usuário Teste */}
+              <div className="p-5 bg-neutral-50 border border-neutral-200 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-sm text-neutral-800 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-rose-500" />
+                    <span>Usuário Teste Pré-Configurado</span>
+                  </h3>
+                  <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 rounded-full text-[10px] font-black uppercase">
+                    Role: OWNER
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-white p-3 rounded-xl border border-neutral-200">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome da Loja</span>
+                    <span className="font-bold text-neutral-900">Restaurante Teste</span>
+                    <span className="text-[10px] text-neutral-400 block font-mono">/restaurante-teste</span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-neutral-200">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block">E-mail de Login</span>
+                    <span className="font-bold font-mono text-neutral-900 break-all">teste@delivery.com</span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-neutral-200">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block">Senha</span>
+                    <span className="font-bold font-mono text-rose-600">123456</span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-neutral-200">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block">Nível de Acesso</span>
+                    <span className="font-bold text-emerald-700">OWNER (Restrito)</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={handleCreateOrResetTestRestaurant}
+                    disabled={creatingTestStore}
+                    className="px-5 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{creatingTestStore ? 'Provisionando Usuário e Loja...' : '⚡ Criar / Resetar Usuário Teste Agora'}</span>
+                  </button>
+
+                  {testUserSuccessInfo && (
+                    <button
+                      onClick={() => {
+                        setActiveStoreId(testUserSuccessInfo.storeId);
+                        navigate('/painel');
+                      }}
+                      className="px-4 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+                    >
+                      <Building2 className="w-4 h-4 text-amber-400" />
+                      <span>Acessar Painel da Loja Teste</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Guia de Teste Passo a Passo */}
+              <div className="space-y-4 pt-2">
+                <h3 className="font-bold text-sm text-neutral-800">Guia de Validação Rápida dos Níveis de Acesso:</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* Card MASTER */}
+                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold">
+                      <Crown className="w-4 h-4 text-amber-600" />
+                      <span>1. Validando Acesso MASTER (Administrador)</span>
+                    </div>
+                    <ul className="space-y-1.5 text-neutral-700 list-disc list-inside text-[11px] leading-relaxed">
+                      <li>Acesse a rota <code className="bg-amber-100 px-1 rounded font-mono">/admin</code> (usuário master).</li>
+                      <li>Você tem visão de todas as lojas cadastradas e seus pagamentos.</li>
+                      <li>Clique em <strong>"Acessar painel da loja"</strong> em qualquer loja: você assume a visão daquela loja instantaneamente para testar Kanban, cardápio, etc.</li>
+                      <li>Veja o banner âmbar superior no topo do painel e use <strong>"Voltar ao Painel Master"</strong> a qualquer momento.</li>
+                      <li>No botão <strong>"Gerenciar Acesso"</strong>, você pode redefinir senhas temporárias e desativar/ativar o lojista.</li>
+                    </ul>
+                  </div>
+
+                  {/* Card OWNER */}
+                  <div className="p-4 bg-rose-50/70 border border-rose-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center gap-2 text-rose-900 font-bold">
+                      <StoreIcon className="w-4 h-4 text-rose-600" />
+                      <span>2. Validando Acesso OWNER (Dono da Loja)</span>
+                    </div>
+                    <ul className="space-y-1.5 text-neutral-700 list-disc list-inside text-[11px] leading-relaxed">
+                      <li>Acesse <code className="bg-rose-100 px-1 rounded font-mono">/#/entrar</code> e digite <strong className="font-mono">teste@delivery.com</strong> com senha <strong className="font-mono">123456</strong>.</li>
+                      <li>Você é direcionado diretamente para <code className="bg-rose-100 px-1 rounded font-mono">/painel</code> da loja vinculada.</li>
+                      <li>O dono vê <strong>apenas</strong> os pedidos, produtos, zonas de entrega e dados da própria loja.</li>
+                      <li>Se o OWNER tentar acessar a URL <code className="bg-rose-100 px-1 rounded font-mono">/admin</code>, é bloqueado e redirecionado imediatamente.</li>
+                      <li>Se desativado pelo Master, o lojista é impedido de logar com mensagem informativa.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modal de Resumo pós-criação de loja */}
@@ -1551,6 +2119,236 @@ export const SuperAdminPage: React.FC = () => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Gerenciamento de Acesso do Usuário (OWNER) */}
+      {managingUserStore && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-xl bg-white rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl relative my-8">
+            <button
+              onClick={() => {
+                setManagingUserStore(null);
+                setManagingUserProfile(null);
+                setUserFormNovaSenha('');
+              }}
+              className="absolute top-5 right-5 p-2 text-neutral-400 hover:text-neutral-700 rounded-xl hover:bg-neutral-100 transition-colors cursor-pointer"
+            >
+              <XCircle className="w-6 h-6" />
+            </button>
+
+            {/* Cabeçalho */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center font-bold flex-shrink-0">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-neutral-900">Gerenciar Acesso do Lojista</h3>
+                <p className="text-xs text-neutral-500">
+                  Loja: <strong>{managingUserStore.nome}</strong> • <span className="font-mono">/{managingUserStore.slug}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Resumo de Status & Role */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-neutral-50 rounded-2xl border border-neutral-200 text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-neutral-400 uppercase block">Perfil</span>
+                <span className="font-bold text-neutral-800">OWNER (Dono)</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-neutral-400 uppercase block">ID da Loja</span>
+                <span className="font-mono text-neutral-600 truncate block text-[11px]" title={managingUserStore.id}>
+                  {managingUserStore.id}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-neutral-400 uppercase block">Status do Acesso</span>
+                <span
+                  className={`inline-flex items-center gap-1 font-bold text-xs ${
+                    userFormAtivo ? 'text-emerald-700' : 'text-rose-700'
+                  }`}
+                >
+                  {userFormAtivo ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-rose-600" />}
+                  <span>{userFormAtivo ? 'Ativo (Liberado)' : 'Desativado (Bloqueado)'}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Botão de Ativar / Desativar Acesso */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl border border-neutral-200 bg-white">
+              <div className="text-xs pr-2">
+                <span className="font-bold text-neutral-900 block">Controle de Acesso da Conta</span>
+                <span className="text-[11px] text-neutral-500">
+                  {userFormAtivo
+                    ? 'O lojista pode fazer login e operar o painel normalmente.'
+                    : 'O acesso está suspenso. O lojista receberá aviso ao tentar logar.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleUserStatus}
+                disabled={userActionLoading}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                  userFormAtivo
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs'
+                }`}
+              >
+                {userFormAtivo ? (
+                  <>
+                    <UserX className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Desativar Acesso</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Ativar Acesso</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Formulário: Dados do Usuário */}
+            <form onSubmit={handleSaveUserData} className="space-y-3 pt-1 border-t border-neutral-100">
+              <h4 className="font-bold text-xs text-neutral-700 uppercase tracking-wider">
+                1. Dados Cadastrais do Responsável
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-neutral-600 mb-1">Nome do Responsável</label>
+                  <input
+                    type="text"
+                    required
+                    value={userFormNome}
+                    onChange={(e) => setUserFormNome(e.target.value)}
+                    placeholder="Nome completo"
+                    className="w-full p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-neutral-600 mb-1">WhatsApp / Telefone</label>
+                  <input
+                    type="text"
+                    value={userFormTelefone}
+                    onChange={(e) => setUserFormTelefone(e.target.value)}
+                    placeholder="5592999999999"
+                    className="w-full p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-neutral-600 mb-1 text-xs">E-mail de Acesso (Login)</label>
+                <input
+                  type="email"
+                  required
+                  value={userFormEmail}
+                  onChange={(e) => setUserFormEmail(e.target.value)}
+                  placeholder="email@restaurante.com"
+                  className="w-full p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 text-xs font-mono"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={userActionLoading}
+                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Salvar Dados Cadastrais</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Seção: Redefinição Administrativa de Senha */}
+            <div className="space-y-3 pt-3 border-t border-neutral-100 text-xs">
+              <h4 className="font-bold text-xs text-neutral-700 uppercase tracking-wider flex items-center justify-between">
+                <span>2. Recuperação & Redefinição de Senha</span>
+                <span className="text-[10px] text-neutral-400 font-normal">Sem acessar o banco</span>
+              </h4>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={userFormNovaSenha}
+                  onChange={(e) => setUserFormNovaSenha(e.target.value)}
+                  placeholder="Nova senha temporária (mín. 6)"
+                  className="flex-1 p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setUserFormNovaSenha(generateStrongPassword(8))}
+                  className="px-3 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 flex-shrink-0"
+                  title="Gerar senha segura automática"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Gerar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetUserPassword}
+                  disabled={userActionLoading || !userFormNovaSenha.trim()}
+                  className="px-3 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 flex-shrink-0 disabled:opacity-50 shadow-xs"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Salvar Senha</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleSendResetPasswordEmail}
+                  disabled={userActionLoading}
+                  className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>Enviar Link por E-mail</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyUserAccess}
+                  className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>{userAccessCopied ? 'Acesso Copiado! ✅' : 'Copiar Dados de Acesso'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Rodapé: Entrar Como a Loja & Fechar */}
+            <div className="pt-4 border-t border-neutral-200 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveStoreId(managingUserStore.id);
+                  setManagingUserStore(null);
+                  navigate('/painel');
+                }}
+                className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-xs"
+              >
+                <Building2 className="w-4 h-4 text-amber-400" />
+                <span>Acessar Painel Desta Loja</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setManagingUserStore(null);
+                  setManagingUserProfile(null);
+                  setUserFormNovaSenha('');
+                }}
+                className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './services/authContext';
 import { ActiveStoreProvider, useActiveStore } from './services/activeStoreContext';
 import { ToastProvider } from './components/Toast';
+import { isMasterRole } from './types';
 
 // Landing Page
 import { LandingHomePage } from './pages/LandingHomePage';
@@ -46,15 +47,15 @@ const MerchantRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     return <Navigate to="/entrar" replace />;
   }
 
-  // Se for superadmin, exige a seleção prévia de uma loja no contexto activeStoreId
-  if (currentUser.role === 'superadmin') {
+  // Se for superadmin / master, exige a seleção prévia de uma loja no contexto activeStoreId
+  if (isMasterRole(currentUser.role)) {
     if (!activeStoreId) {
       return <Navigate to="/admin" replace />;
     }
     return <>{children}</>;
   }
 
-  // Para lojista normal, exige ter um storeId vinculado
+  // Para lojista normal / OWNER, exige ter um storeId vinculado
   if (!currentUser.storeId) {
     return <Navigate to="/entrar" replace />;
   }
@@ -73,7 +74,7 @@ const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
     );
   }
 
-  if (!currentUser || currentUser.role !== 'superadmin') {
+  if (!currentUser || !isMasterRole(currentUser.role)) {
     return <Navigate to="/entrar" replace />;
   }
 

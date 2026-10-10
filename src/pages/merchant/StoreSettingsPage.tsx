@@ -38,6 +38,7 @@ import {
 import { gerarBrCode, gerarQrCodeDataUrl } from '../../lib/pix';
 import { ImageUploader } from '../../components/ImageUploader';
 import { useToast } from '../../components/Toast';
+import { printService } from '../../services/printService';
 
 /**
  * Valida os períodos de funcionamento de um dia:
@@ -114,12 +115,12 @@ export const StoreSettingsPage: React.FC = () => {
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'perfil' | 'horarios' | 'bairros' | 'pagamentos' | 'whatsapp' | 'qrcode'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'horarios' | 'bairros' | 'pagamentos' | 'impressora' | 'whatsapp' | 'qrcode'>('perfil');
 
   // Sync tab with URL search parameter
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam && ['perfil', 'horarios', 'bairros', 'pagamentos', 'whatsapp', 'qrcode'].includes(tabParam)) {
+    if (tabParam && ['perfil', 'horarios', 'bairros', 'pagamentos', 'impressora', 'whatsapp', 'qrcode'].includes(tabParam)) {
       setActiveTab(tabParam as any);
     }
   }, [searchParams]);
@@ -134,6 +135,20 @@ export const StoreSettingsPage: React.FC = () => {
   const [editingTempo, setEditingTempo] = useState<string>('');
   const [storeQrCodeUrl, setStoreQrCodeUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [printingTest, setPrintingTest] = useState(false);
+
+  const handlePrintTest = async () => {
+    setPrintingTest(true);
+    try {
+      await printService.imprimirTeste(formData);
+      showToast('Comprovante de teste enviado para a impressora!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao disparar teste de impressão térmica.', 'error');
+    } finally {
+      setPrintingTest(false);
+    }
+  };
 
   // Teste Pix State
   const [testPixModalOpen, setTestPixModalOpen] = useState(false);
@@ -488,6 +503,15 @@ export const StoreSettingsPage: React.FC = () => {
           Pagamentos & Pix
         </button>
         <button
+          onClick={() => setActiveTab('impressora')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'impressora' ? 'bg-neutral-900 text-white shadow-xs' : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50'
+          }`}
+        >
+          <Printer className="w-3.5 h-3.5" />
+          <span>Impressora Térmica</span>
+        </button>
+        <button
           onClick={() => setActiveTab('whatsapp')}
           className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'whatsapp' ? 'bg-neutral-900 text-white shadow-xs' : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50'
@@ -634,12 +658,21 @@ export const StoreSettingsPage: React.FC = () => {
 
             {/* Configurações de Impressora Térmica & Automação */}
             <div className="sm:col-span-2 pt-4 border-t border-neutral-100 space-y-3">
-              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
-                <Printer className="w-4 h-4 text-neutral-600" />
-                <span>Impressora Térmica & Automação</span>
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-neutral-600" />
+                  <span>Impressora Térmica & Automação</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('impressora')}
+                  className="text-xs text-neutral-600 hover:text-neutral-900 underline font-medium cursor-pointer"
+                >
+                  Abrir painel completo de impressão →
+                </button>
+              </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
                 <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
@@ -650,29 +683,53 @@ export const StoreSettingsPage: React.FC = () => {
                   />
                   <div>
                     <label htmlFor="imprimirAuto" className="font-bold text-xs text-neutral-900 cursor-pointer">
-                      Imprimir automaticamente ao aceitar pedido
+                      Impressão automática ao aceitar
                     </label>
                     <p className="text-[11px] text-neutral-500 mt-0.5">
-                      Ao clicar em &quot;Aceitar&quot; no Kanban, dispara a impressão da Cozinha e em seguida da Entrega.
+                      Dispara a impressão térmica assim que o pedido for aceito.
                     </p>
                   </div>
                 </div>
 
                 <div>
                   <label className="block font-bold text-xs text-neutral-900 mb-1">
-                    Largura do Papel da Impressora
+                    Largura da Bobina
                   </label>
                   <select
                     value={formData.larguraImpressora || '80mm'}
                     onChange={(e) => setFormData({ ...formData, larguraImpressora: e.target.value as '80mm' | '58mm' })}
                     className="w-full p-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-neutral-900"
                   >
-                    <option value="80mm">80mm (Padrão - Bobina Larga)</option>
-                    <option value="58mm">58mm (Bobina Estreita / Mini Térmica)</option>
+                    <option value="80mm">80mm (Padrão Larga)</option>
+                    <option value="58mm">58mm (Mini Térmica)</option>
                   </select>
-                  <p className="text-[11px] text-neutral-500 mt-1">
-                    Ajusta o tamanho das comandas térmicas impressas no navegador.
-                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-xs text-neutral-900 mb-1">
+                    Vias de Impressão
+                  </label>
+                  <select
+                    value={formData.viasImpressao || 'ambas'}
+                    onChange={(e) => setFormData({ ...formData, viasImpressao: e.target.value as 'cozinha' | 'entrega' | 'ambas' })}
+                    className="w-full p-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-neutral-900"
+                  >
+                    <option value="ambas">Ambas (Cozinha + Entrega)</option>
+                    <option value="cozinha">Apenas Cozinha</option>
+                    <option value="entrega">Apenas Entrega</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3 pt-2 border-t border-neutral-200 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handlePrintTest}
+                    disabled={printingTest}
+                    className="px-3.5 py-2 bg-white hover:bg-neutral-100 border border-neutral-300 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {printingTest ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                    <span>Imprimir teste da impressora</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1280,6 +1337,203 @@ export const StoreSettingsPage: React.FC = () => {
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               <span>{saving ? 'Gravando no Firestore...' : 'Salvar Pagamentos'}</span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ABA: IMPRESSORA TÉRMICA PROFISSIONAL */}
+      {activeTab === 'impressora' && (
+        <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-100">
+            <div>
+              <h2 className="text-base font-black text-neutral-900 flex items-center gap-2">
+                <Printer className="w-5 h-5 text-neutral-900" />
+                <span>Configurações da Impressora Térmica (Cupom)</span>
+              </h2>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Otimizado para restaurantes e delivery com bobinas térmicas de 80mm e 58mm.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePrintTest}
+              disabled={printingTest}
+              className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer self-start sm:self-auto shadow-2xs"
+            >
+              {printingTest ? <Loader2 className="w-4 h-4 animate-spin text-amber-700" /> : <Printer className="w-4 h-4 text-amber-700" />}
+              <span>Imprimir teste da impressora</span>
+            </button>
+          </div>
+
+          {/* 1. Largura da Bobina */}
+          <div className="space-y-3">
+            <label className="block text-xs font-black text-neutral-900 uppercase tracking-wider">
+              1. Largura do Papel / Bobina Térmica
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div
+                onClick={() => setFormData({ ...formData, larguraImpressora: '80mm' })}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  (formData.larguraImpressora || '80mm') === '80mm'
+                    ? 'border-neutral-900 bg-neutral-50 shadow-xs'
+                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-sm text-neutral-900">80mm (Padrão de Restaurantes)</span>
+                  {(formData.larguraImpressora || '80mm') === '80mm' && (
+                    <span className="px-2 py-0.5 bg-neutral-900 text-white rounded text-[10px] font-bold">ATIVO</span>
+                  )}
+                </div>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Bobina larga (3 polegadas). Ideal para Epson TM-T20, Bematech MP-4200, Elgin i9, Daruma, etc. Maior legibilidade e espaçamento.
+                </p>
+              </div>
+
+              <div
+                onClick={() => setFormData({ ...formData, larguraImpressora: '58mm' })}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  formData.larguraImpressora === '58mm'
+                    ? 'border-neutral-900 bg-neutral-50 shadow-xs'
+                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-sm text-neutral-900">58mm (Mini Térmica / Portátil)</span>
+                  {formData.larguraImpressora === '58mm' && (
+                    <span className="px-2 py-0.5 bg-neutral-900 text-white rounded text-[10px] font-bold">ATIVO</span>
+                  )}
+                </div>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Bobina estreita (2 polegadas). Ideal para mini impressoras Bluetooth, maquininhas POS inteligentes e impressoras portáteis.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Quantidade de Vias */}
+          <div className="space-y-3">
+            <label className="block text-xs font-black text-neutral-900 uppercase tracking-wider">
+              2. Quantidade de Vias a Imprimir
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div
+                onClick={() => setFormData({ ...formData, viasImpressao: 'ambas' })}
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                  (formData.viasImpressao || 'ambas') === 'ambas'
+                    ? 'border-neutral-900 bg-neutral-50 shadow-xs'
+                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs text-neutral-900">Ambas as Vias</span>
+                  {(formData.viasImpressao || 'ambas') === 'ambas' && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  )}
+                </div>
+                <p className="text-[11px] text-neutral-500 leading-tight">
+                  1 Comanda da Cozinha + 1 Cupom de Entrega/Cliente.
+                </p>
+              </div>
+
+              <div
+                onClick={() => setFormData({ ...formData, viasImpressao: 'cozinha' })}
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                  formData.viasImpressao === 'cozinha'
+                    ? 'border-neutral-900 bg-neutral-50 shadow-xs'
+                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs text-neutral-900">Apenas Cozinha</span>
+                  {formData.viasImpressao === 'cozinha' && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  )}
+                </div>
+                <p className="text-[11px] text-neutral-500 leading-tight">
+                  Somente itens, quantidades e observações para a equipe de preparo.
+                </p>
+              </div>
+
+              <div
+                onClick={() => setFormData({ ...formData, viasImpressao: 'entrega' })}
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                  formData.viasImpressao === 'entrega'
+                    ? 'border-neutral-900 bg-neutral-50 shadow-xs'
+                    : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs text-neutral-900">Apenas Entrega / Caixa</span>
+                  {formData.viasImpressao === 'entrega' && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  )}
+                </div>
+                <p className="text-[11px] text-neutral-500 leading-tight">
+                  Somente cupom com dados de entrega, endereço e total financeiro.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Impressão Automática ao Aceitar */}
+          <div className="space-y-3">
+            <label className="block text-xs font-black text-neutral-900 uppercase tracking-wider">
+              3. Automação no Kanban
+            </label>
+            <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <span className="font-bold text-xs text-neutral-900 block">
+                  Impressão Automática ao Aceitar Pedido
+                </span>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Ao clicar em <strong>&quot;Aceitar Pedido&quot;</strong> na coluna de novos pedidos ou no modal de detalhes, o sistema envia a impressão para a fila imediatamente. O sistema possui controle rigoroso de envio único (idempotência), garantindo que cada pedido seja impresso apenas 1 vez.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                <input
+                  type="checkbox"
+                  checked={formData.imprimirAutoAoAceitar !== false}
+                  onChange={(e) => setFormData({ ...formData, imprimirAutoAoAceitar: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+              </label>
+            </div>
+          </div>
+
+          {/* 4. Arquitetura & Compatibilidade PrintService */}
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-2 text-xs text-blue-900">
+            <div className="flex items-center gap-2 font-bold text-blue-950">
+              <Sparkles className="w-4 h-4 text-blue-700" />
+              <span>Arquitetura Profissional (Camada PrintService Ativa)</span>
+            </div>
+            <p className="text-blue-800 leading-relaxed">
+              O sistema utiliza a camada centralizada <strong>PrintService</strong> com fila serial assíncrona para evitar travamentos ou diálogos de impressão sobrepostos. O gerador de comandos nativo <strong>ESC/POS</strong> já está preparado para futuras integrações diretas via Print Agent local (USB / Serial / TCP-IP 9100) sem necessidade de refatorar seu aplicativo.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
+            <button
+              type="button"
+              onClick={handlePrintTest}
+              disabled={printingTest}
+              className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              {printingTest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              <span>Imprimir teste da impressora</span>
+            </button>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{saving ? 'Gravando no Firestore...' : 'Salvar Configurações de Impressão'}</span>
             </button>
           </div>
         </form>

@@ -26,6 +26,7 @@ import { CouriersPage } from './pages/merchant/CouriersPage';
 import { CustomersCrmPage } from './pages/merchant/CustomersCrmPage';
 import { ReportsPage } from './pages/merchant/ReportsPage';
 import { SubscriptionPage } from './pages/merchant/SubscriptionPage';
+import { OperationalFeePage } from './pages/merchant/OperationalFeePage';
 
 // Super Admin Page
 import { SuperAdminPage } from './pages/admin/SuperAdminPage';
@@ -118,6 +119,7 @@ export default function App() {
               <Route path="entregadores" element={<CouriersPage />} />
               <Route path="clientes" element={<CustomersCrmPage />} />
               <Route path="relatorios" element={<ReportsPage />} />
+              <Route path="repasse" element={<OperationalFeePage />} />
               <Route path="minha-assinatura" element={<SubscriptionPage />} />
             </Route>
 

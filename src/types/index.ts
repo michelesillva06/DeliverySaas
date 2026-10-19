@@ -341,3 +341,127 @@ export interface SubscriptionPaymentRequest {
 }
 
 export type SaasPaymentRequest = SubscriptionPaymentRequest;
+
+// ==========================================
+// MÓDULO DE TAXA OPERACIONAL POR PEDIDO
+// ==========================================
+export type OperationalBillingPeriod = 'diario' | 'semanal' | 'mensal';
+
+export interface OperationalFeeChangeLog {
+  id: string;
+  data: string; // ISO string
+  usuario: string; // email ou nome do responsável
+  descricao: string;
+  justificativa: string;
+}
+
+export interface StoreFeeOverride {
+  ativo: boolean;
+  valorUnitario?: number; // Override individual (ex: 0.99)
+  dataInicio?: string; // YYYY-MM-DD
+  isencaoAte?: string; // YYYY-MM-DD
+}
+
+export interface OperationalFeeConfig {
+  valorPadrao: number; // Padrão: 0.99
+  ativoGlobal: boolean; // default: true
+  periodoApuracao: OperationalBillingPeriod; // 'diario' | 'semanal' | 'mensal'
+  diasAposFechamentoVencimento: number; // ex: 3 ou 5 dias para vencer
+  dataInicioCobranca: string; // ISO date - pedidos anteriores não são cobrados
+  lojasConfig: {
+    [storeId: string]: StoreFeeOverride;
+  };
+  historicoAlteracoes: OperationalFeeChangeLog[];
+}
+
+export type OperationalFeeStatus = 'pendente' | 'em_cobranca' | 'pago' | 'estornado' | 'ajustado';
+
+export interface OperationalFeeEntry {
+  id: string; // fee_{orderId}
+  orderId: string;
+  orderNumero: number;
+  storeId: string;
+  storeNome: string;
+  dataConclusao: string; // ISO string
+  valorPedido: number; // Apenas para referência
+  taxaAplicada: number; // Ex: 0.99
+  status: OperationalFeeStatus;
+  cobrancaId?: string; // ID da fatura vinculada
+  estornadoEm?: string;
+  motivoEstorno?: string;
+  criadoEm: string; // ISO string
+}
+
+export type OperationalInvoiceStatus = 'aberta' | 'aguardando_confirmacao' | 'paga' | 'vencida' | 'cancelada';
+
+export interface OperationalInvoice {
+  id: string; // inv_{storeId}_{timestamp}
+  storeId: string;
+  storeNome: string;
+  periodoInicio: string; // YYYY-MM-DD
+  periodoFim: string; // YYYY-MM-DD
+  periodoTipo: OperationalBillingPeriod;
+  quantidadePedidos: number;
+  taxaMedia: number;
+  valorTotal: number;
+  vencimento: string; // YYYY-MM-DD
+  status: OperationalInvoiceStatus;
+  pedidosIds: string[];
+  lancamentosIds: string[];
+  // Pagamento Pix
+  pixChave?: string;
+  pixTipoChave?: string;
+  pixRecebedor?: string;
+  pixCidade?: string;
+  pixPayload?: string;
+  pixQrCodeBase64?: string;
+  // Comprovante / Envio manual
+  comprovanteTexto?: string;
+  comprovanteEnviadoEm?: string;
+  // Confirmação
+  confirmadoPor?: string;
+  confirmadoEm?: string;
+  geradoEm: string;
+}
+
+// ==========================================
+// INSTRUMENTAÇÃO DE ACESSOS E ANALYTICS
+// ==========================================
+export type StorefrontEventType = 'visita' | 'visualizacao_produto' | 'iniciou_pedido' | 'concluiu_pedido';
+
+export interface StorefrontAccessLog {
+  id: string;
+  storeId: string;
+  storeSlug: string;
+  sessionId: string;
+  tipo: StorefrontEventType;
+  produtoId?: string;
+  data: string; // YYYY-MM-DD
+  timestamp: string; // ISO string
+}
+
+// ==========================================
+// AUDITORIA DO SUPER ADMIN
+// ==========================================
+export type AuditActionType =
+  | 'alterar_taxa_global'
+  | 'alterar_taxa_loja'
+  | 'suspender_loja'
+  | 'ativar_loja'
+  | 'confirmar_fatura'
+  | 'fechar_periodo_fatura'
+  | 'ajuste_saldo'
+  | 'editar_loja'
+  | 'login_como_loja';
+
+export interface AdminAuditLog {
+  id: string;
+  autorEmail: string;
+  autorUid: string;
+  acao: AuditActionType;
+  alvoId: string; // storeId, configId ou invoiceId
+  alvoNome?: string;
+  detalhes: string;
+  justificativa?: string;
+  criadoEm: string;
+}

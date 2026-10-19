@@ -36,6 +36,7 @@ import {
   StorePayment,
   SaasPaymentRequest,
 } from '../types';
+import { recordOrderOperationalFee, reverseOrderOperationalFee } from './operationalFeeService';
 
 // ==========================================
 // ANONYMOUS AUTH HELPER FOR CUSTOMERS
@@ -226,6 +227,28 @@ export function subscribeToOrdersByStore(
   );
 }
 
+export function subscribeToAllOrders(
+  callback: (orders: Order[]) => void,
+  limitCount = 500
+): Unsubscribe {
+  const colRef = collection(db, 'orders');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const orders: Order[] = [];
+      snap.forEach((d) => {
+        orders.push(d.data() as Order);
+      });
+      orders.sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+      callback(orders.slice(0, limitCount));
+    },
+    (err) => {
+      console.error('Erro no snapshot global de orders:', err);
+      callback([]);
+    }
+  );
+}
+
 export function subscribeToOrderById(
   orderId: string,
   callback: (order: Order | null) => void
@@ -358,6 +381,22 @@ export async function updateOrderStatusInFirestore(
   }
 
   await updateDoc(docRef, limparObjeto(updateData));
+
+  // Contabilização automática e idempotente da Taxa Operacional por Pedido
+  try {
+    if (newStatus === 'entregue' || (order.tipo === 'retirada' && newStatus === 'pronto')) {
+      const storeRef = doc(db, 'stores', order.storeId);
+      const storeSnap = await getDoc(storeRef);
+      if (storeSnap.exists()) {
+        const store = storeSnap.data() as Store;
+        await recordOrderOperationalFee({ ...order, status: newStatus }, store);
+      }
+    } else if (newStatus === 'cancelado') {
+      await reverseOrderOperationalFee(order.id, nota || 'Pedido cancelado');
+    }
+  } catch (feeErr) {
+    console.error('Aviso ao processar taxa operacional do pedido:', feeErr);
+  }
 }
 
 export async function updateOrderPaymentStatusInFirestore(

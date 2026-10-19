@@ -28,6 +28,7 @@ import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl } from '.
 import { limparObjeto } from '../../lib/utils';
 import { useToast } from '../../components/Toast';
 import { validateAndSanitizeCheckout } from '../../schemas/checkoutSchema';
+import { trackStorefrontEvent } from '../../services/analyticsService';
 
 export const CheckoutWrapper: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -117,6 +118,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
 
   // Escutar zonas de entrega em tempo real do Firestore
   useEffect(() => {
+    trackStorefrontEvent(store.id, store.slug, 'iniciou_pedido');
     const unsub = subscribeToDeliveryZonesByStore(store.id, (zones) => {
       setDeliveryZones(zones.filter((z) => z.ativo !== false));
     });
@@ -243,6 +245,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       });
 
       const order = await createOrderInFirestore(orderPayload);
+      trackStorefrontEvent(store.id, store.slug, 'concluiu_pedido');
 
       // Limpar carrinho
       clearCart();

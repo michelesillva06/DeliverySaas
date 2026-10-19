@@ -23,6 +23,7 @@ import {
   MessageCircle,
   ArrowLeft,
   Crown,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '../../services/authContext';
 import { useActiveStore } from '../../services/activeStoreContext';
@@ -145,6 +146,7 @@ export const PanelLayout: React.FC = () => {
     { label: 'Entregadores', path: '/painel/entregadores', icon: Bike, statusTag: 'Em breve' },
     { label: 'Clientes (CRM)', path: '/painel/clientes', icon: Users },
     { label: 'Relatórios & Vendas', path: '/painel/relatorios', icon: BarChart3 },
+    { label: 'Meu Repasse Operacional', path: '/painel/repasse', icon: Receipt },
     { label: 'Minha Assinatura', path: '/painel/minha-assinatura', icon: CreditCard },
   ];
 

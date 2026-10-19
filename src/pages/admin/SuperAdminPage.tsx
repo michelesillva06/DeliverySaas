@@ -30,11 +30,30 @@ import {
   Smartphone,
   Crown,
   LogOut,
+  LayoutDashboard,
+  ShoppingBag,
+  TrendingUp,
+  FileText,
+  Activity,
+  History,
+  Download,
+  Flame,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { firebaseConfig, auth } from '../../lib/firebase';
-import { Store, StoreStatus, SaasConfig, SaasPaymentRequest, StorePayment, UserProfile, isMasterRole } from '../../types';
+import {
+  Store,
+  StoreStatus,
+  SaasConfig,
+  SaasPaymentRequest,
+  StorePayment,
+  UserProfile,
+  isMasterRole,
+  Order,
+  OperationalFeeEntry,
+  OperationalInvoice,
+} from '../../types';
 import {
   subscribeToAllStores,
   saveStoreToFirestore,
@@ -52,12 +71,29 @@ import {
   subscribeToSaasPaymentRequests,
   updateSaasPaymentRequestStatusInFirestore,
   subscribeToStorePayments,
+  subscribeToAllOrders,
 } from '../../services/firestoreService';
+import {
+  subscribeToAllOperationalFeeEntries,
+  subscribeToAllInvoices,
+  recordAdminAuditLog,
+} from '../../services/operationalFeeService';
 import { formatCurrency, getDefaultHorarios } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { SUPPORT_WHATSAPP } from '../../lib/constants';
 import { useActiveStore } from '../../services/activeStoreContext';
 import { useAuth } from '../../services/authContext';
+
+// Subcomponentes Modulares do Super Admin
+import { ExecutiveOverviewTab } from './components/ExecutiveOverviewTab';
+import { GlobalOrdersTab } from './components/GlobalOrdersTab';
+import { StorefrontAnalyticsTab } from './components/StorefrontAnalyticsTab';
+import { StoresFinancialTab } from './components/StoresFinancialTab';
+import { OperationalFeeTab } from './components/OperationalFeeTab';
+import { OperationalInvoicesTab } from './components/OperationalInvoicesTab';
+import { ReportsExportTab } from './components/ReportsExportTab';
+import { SystemHealthTab } from './components/SystemHealthTab';
+import { AuditLogsTab } from './components/AuditLogsTab';
 
 // Função para gerar senha inicial forte (10 caracteres, sem 0/O/l/1)
 export function generateStrongPassword(length = 10): string {
@@ -94,10 +130,30 @@ export const SuperAdminPage: React.FC = () => {
     navigate('/entrar');
   };
 
+  type SuperAdminTab =
+    | 'visao_geral'
+    | 'lojas'
+    | 'pedidos_globais'
+    | 'analytics'
+    | 'faturamento_lojas'
+    | 'taxas'
+    | 'cobrancas'
+    | 'relatorios'
+    | 'saude'
+    | 'auditoria'
+    | 'nova_loja'
+    | 'financeiro'
+    | 'solicitacoes'
+    | 'config'
+    | 'teste';
+
   const [stores, setStores] = useState<Store[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [feeEntries, setFeeEntries] = useState<OperationalFeeEntry[]>([]);
+  const [invoices, setInvoices] = useState<OperationalInvoice[]>([]);
   const [saasConfig, setSaasConfig] = useState<SaasConfig | null>(null);
   const [paymentRequests, setPaymentRequests] = useState<SaasPaymentRequest[]>([]);
-  const [tab, setTab] = useState<'lojas' | 'nova_loja' | 'financeiro' | 'solicitacoes' | 'config' | 'teste'>('lojas');
+  const [tab, setTab] = useState<SuperAdminTab>('visao_geral');
   const [savingConfig, setSavingConfig] = useState(false);
 
   // Estado para Gerenciar Acesso do Usuário (OWNER)
@@ -172,11 +228,17 @@ export const SuperAdminPage: React.FC = () => {
     const unsubStores = subscribeToAllStores((data) => setStores(data));
     const unsubConfig = subscribeToSaasConfig((cfg) => setSaasConfig(cfg));
     const unsubReqs = subscribeToSaasPaymentRequests((reqs) => setPaymentRequests(reqs));
+    const unsubOrders = subscribeToAllOrders((ords) => setAllOrders(ords));
+    const unsubFees = subscribeToAllOperationalFeeEntries((f) => setFeeEntries(f));
+    const unsubInvs = subscribeToAllInvoices((i) => setInvoices(i));
 
     return () => {
       unsubStores();
       unsubConfig();
       unsubReqs();
+      unsubOrders();
+      unsubFees();
+      unsubInvs();
     };
   }, []);
 

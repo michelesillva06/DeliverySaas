@@ -19,6 +19,7 @@ import { CartDrawer } from '../../components/CartDrawer';
 import { CartFloatingBar } from '../../components/CartFloatingBar';
 import { CartProvider, useCart } from '../../services/cartContext';
 import { useToast } from '../../components/Toast';
+import { trackStorefrontEvent } from '../../services/analyticsService';
 
 export const StorefrontWrapper: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -35,6 +36,9 @@ export const StorefrontWrapper: React.FC = () => {
     getStoreBySlugFromFirestore(slug).then((st) => {
       setStore(st);
       setLoading(false);
+      if (st) {
+        trackStorefrontEvent(st.id, st.slug, 'visita');
+      }
     });
 
     const unsub = subscribeToStoreBySlug(slug, (updated) => {

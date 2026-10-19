@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Save,
@@ -134,6 +135,16 @@ export const StoreSettingsPage: React.FC = () => {
   const [editingTaxa, setEditingTaxa] = useState<string>('');
   const [editingTempo, setEditingTempo] = useState<string>('');
   const [storeQrCodeUrl, setStoreQrCodeUrl] = useState('');
+  
+  useEffect(() => {
+    if (store) {
+      const url = `${window.location.origin}/#/${store.slug}`;
+      QRCode.toDataURL(url, { width: 300, margin: 2 })
+        .then(setStoreQrCodeUrl)
+        .catch(console.error);
+    }
+  }, [store]);
+
   const [saving, setSaving] = useState(false);
   const [printingTest, setPrintingTest] = useState(false);
 
@@ -1639,47 +1650,60 @@ export const StoreSettingsPage: React.FC = () => {
 
       {/* ABA 6: QR CODE DO CARDÁPIO (PARA IMPRESSÃO A5) */}
       {activeTab === 'qrcode' && (
-        <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-6 text-center max-w-lg mx-auto">
-          <div>
-            <h2 className="text-base font-bold text-neutral-900">QR Code Oficial do Seu Cardápio</h2>
-            <p className="text-xs text-neutral-500 mt-1">
-              Coloque este QR Code nas mesas, balcão ou envie aos clientes para abrirem seu cardápio instantaneamente.
-            </p>
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-6 text-center max-w-lg mx-auto print:hidden">
+            <div>
+              <h2 className="text-base font-bold text-neutral-900">QR Code Oficial do Seu Cardápio</h2>
+              <p className="text-xs text-neutral-500 mt-1">
+                Coloque este QR Code nas mesas, balcão ou envie aos clientes para abrirem seu cardápio instantaneamente.
+              </p>
+            </div>
+
+            <div className="p-4 bg-neutral-50 border-2 border-dashed border-neutral-200 rounded-2xl inline-block">
+              {storeQrCodeUrl ? (
+                <img src={storeQrCodeUrl} alt="QR Code Cardápio" className="w-56 h-56 mx-auto object-contain" />
+              ) : (
+                <div className="w-56 h-56 flex items-center justify-center text-xs text-neutral-400">
+                  Gerando QR Code...
+                </div>
+              )}
+            </div>
+
+            <div className="text-xs font-mono text-neutral-600 bg-neutral-100 p-2.5 rounded-xl break-all">
+              {window.location.origin}/#/{store.slug}
+            </div>
+
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/#/${store.slug}`);
+                  showToast('Link do cardápio copiado!', 'success');
+                }}
+                className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Copiar Link</span>
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Cartaz</span>
+              </button>
+            </div>
           </div>
 
-          <div className="p-4 bg-neutral-50 border-2 border-dashed border-neutral-200 rounded-2xl inline-block">
-            {storeQrCodeUrl ? (
-              <img src={storeQrCodeUrl} alt="QR Code Cardápio" className="w-56 h-56 mx-auto object-contain" />
-            ) : (
-              <div className="w-56 h-56 flex items-center justify-center text-xs text-neutral-400">
-                Gerando QR Code...
-              </div>
+          {/* Printable Poster */}
+          <div className="hidden print:block p-8 text-center border-4 border-neutral-900 rounded-3xl max-w-md mx-auto space-y-6">
+            <h1 className="text-3xl font-black">{store.nome}</h1>
+            <p className="text-lg">Faça seu pedido pelo nosso cardápio digital!</p>
+            {storeQrCodeUrl && (
+              <img src={storeQrCodeUrl} alt="QR Code" className="w-64 h-64 mx-auto" />
             )}
-          </div>
-
-          <div className="text-xs font-mono text-neutral-600 bg-neutral-100 p-2.5 rounded-xl break-all">
-            {window.location.origin}/#/{store.slug}
-          </div>
-
-          <div className="flex justify-center gap-2">
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/#/${store.slug}`);
-                showToast('Link do cardápio copiado!', 'success');
-              }}
-              className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Copy className="w-4 h-4" />
-              <span>Copiar Link</span>
-            </button>
-
-            <button
-              onClick={() => window.print()}
-              className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Imprimir Cartaz</span>
-            </button>
+            <p className="text-base font-bold">Aproxime a câmera do seu celular</p>
+            <p className="text-sm text-neutral-500">ou acesse: {window.location.origin}/#/{store.slug}</p>
           </div>
         </div>
       )}

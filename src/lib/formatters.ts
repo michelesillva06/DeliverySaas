@@ -270,7 +270,8 @@ export function getStoreCurrentStatusText(store: Store): string {
 }
 
 /**
- * Cria o link direto para WhatsApp com número e mensagem pré-preenchida
+ * Cria o link direto para WhatsApp com número e mensagem pré-preenchida.
+ * Utiliza o endpoint oficial wa.me para garantir compatibilidade com emojis e caracteres UTF-8.
  */
 export function generateWhatsAppUrl(phone: string, text: string): string {
   const cleanPhone = sanitizePhone(phone);
@@ -325,17 +326,18 @@ export function gerarMensagemEntregador(order: Order, store: Store): string {
   if (order.tipo === 'entrega' && order.endereco) {
     const end = order.endereco;
     const endLinhas: string[] = [];
+    endLinhas.push('📍 *Endereço de Entrega:*');
     endLinhas.push(`${end.rua}, Nº ${end.numero}`);
     if (end.complemento && end.complemento.trim()) {
-      endLinhas.push(end.complemento.trim());
+      endLinhas.push(`Complemento: ${end.complemento.trim()}`);
     }
     endLinhas.push(`Bairro: ${end.bairro}`);
     if (end.referencia && end.referencia.trim()) {
-      endLinhas.push(end.referencia.trim());
+      endLinhas.push(`Ponto de ref.: ${end.referencia.trim()}`);
     }
     enderecoTxt = endLinhas.join('\n');
   } else {
-    enderecoTxt = 'Retirada no balcão';
+    enderecoTxt = '📦 *Tipo:* Retirada no balcão';
   }
 
   let mapsTxt = '';
@@ -343,7 +345,7 @@ export function gerarMensagemEntregador(order: Order, store: Store): string {
     const end = order.endereco;
     const partes = [end.rua, `Nº ${end.numero}`, end.bairro, store.pixCity].filter(Boolean);
     const endQuery = partes.join(', ');
-    mapsTxt = `🗺️ Ver no mapa: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endQuery)}`;
+    mapsTxt = `🗺️ *Ver no mapa (GPS):*\nhttps://maps.google.com/?q=${encodeURIComponent(endQuery)}`;
   }
 
   const forma = order.pagamento.forma;
@@ -351,33 +353,47 @@ export function gerarMensagemEntregador(order: Order, store: Store): string {
   let pagamentoTxt = '';
 
   if (forma === 'pix') {
-    let pixStatus = 'Status: ';
+    let pixStatus = '';
     if (isPixConfirmed) {
-      pixStatus += '✅ PAGO';
+      pixStatus = '✅ *PAGO VIA PIX* — NÃO COBRAR O CLIENTE!';
     } else {
-      pixStatus += '⏳ AGUARDANDO CONFIRMAÇÃO — não faça a entrega sem confirmar com a loja';
+      pixStatus = '⏳ *AGUARDANDO CONFIRMAÇÃO DO PIX* — Confirme com a loja antes de entregar!';
     }
-    pagamentoTxt = `💰 Pagamento: Pix\n${pixStatus}`;
+    pagamentoTxt = `💰 *Pagamento:* Pix\n*Status:* ${pixStatus}`;
   } else if (forma === 'dinheiro') {
     const trocoVal = order.pagamento.trocoPara || (order.pagamento.troco ? order.total + order.pagamento.troco : null);
-    let dinheiroInfo = `💵 Receber: ${formatCurrency(order.total)}`;
-    if (trocoVal && trocoVal > 0) {
-      dinheiroInfo += ` (troco para ${formatCurrency(trocoVal)})`;
+    let dinheiroInfo = `💵 *RECEBER DO CLIENTE:* *${formatCurrency(order.total)}*`;
+    if (trocoVal && trocoVal > order.total) {
+      dinheiroInfo += `\n⚠️ *Levar troco para ${formatCurrency(trocoVal)}* (Troco: ${formatCurrency(trocoVal - order.total)})`;
     }
-    pagamentoTxt = `💰 Pagamento: Dinheiro\n${dinheiroInfo}`;
+    pagamentoTxt = `💰 *Pagamento:* Dinheiro\n${dinheiroInfo}`;
   } else if (forma === 'cartao_entrega' || (forma as string) === 'cartao_maquininha' || (forma as string) === 'cartao') {
-    pagamentoTxt = `💰 Pagamento: Cartão na entrega\n💳 Levar maquininha — Total: ${formatCurrency(order.total)}`;
+    pagamentoTxt = `💰 *Pagamento:* Cartão na entrega\n💳 *RECEBER DO CLIENTE:* *${formatCurrency(order.total)}*\n⚠️ *Levar maquininha de cartão*`;
   } else {
-    pagamentoTxt = `💰 Pagamento: A combinar\nTotal: ${formatCurrency(order.total)}`;
+    pagamentoTxt = `💰 *Pagamento:* A combinar\n*Total:* *${formatCurrency(order.total)}*`;
   }
 
-  const blocos = [
-    `🛵 NOVA ENTREGA — Pedido #${order.numero}`,
+  // Resumo de itens para o entregador conferir
+  let itensTxt = '';
+  if (order.itens && order.itens.length > 0) {
+    const totalItens = order.itens.reduce((acc, it) => acc + (it.qtd || 1), 0);
+    const linhasItens = order.itens.map((it) => {
+      let desc = `• ${it.qtd}x ${it.nome}`;
+      if (it.complementos && it.complementos.length > 0) {
+        desc += ` (+ ${it.complementos.map((c) => c.nome).join(', ')})`;
+      }
+      return desc;
+    });
+    itensTxt = `📋 *Itens (${totalItens} ${totalItens === 1 ? 'item' : 'itens'}):*\n${linhasItens.join('\n')}`;
+  }
+
+  const blocos: string[] = [
+    `🛵 *NOVA ENTREGA — Pedido #${order.numero}*`,
+    `🏪 *Loja:* ${store.nome}`,
     '',
-    `Cliente: ${order.cliente.nome}`,
-    `Telefone: ${clienteTel}`,
+    `👤 *Cliente:* ${order.cliente.nome}`,
+    `📞 *Telefone:* ${clienteTel}`,
     '',
-    '📍 Endereço:',
     enderecoTxt,
   ];
 
@@ -386,13 +402,19 @@ export function gerarMensagemEntregador(order: Order, store: Store): string {
     blocos.push(mapsTxt);
   }
 
+  if (itensTxt) {
+    blocos.push('');
+    blocos.push(itensTxt);
+  }
+
   blocos.push('');
   blocos.push(pagamentoTxt);
   blocos.push('');
-  blocos.push('Boa entrega! 🙏');
+  blocos.push('🛵💨 *Boa entrega e dirija com cuidado!*');
 
   return blocos.join('\n');
 }
+
 
 /**
  * Dispara a notificação via WhatsApp para o entregador

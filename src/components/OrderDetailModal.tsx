@@ -14,9 +14,10 @@ import {
   Bike,
   DollarSign,
   ShieldCheck,
+  Copy,
 } from 'lucide-react';
 import { Order, Store, Courier, OrderStatus } from '../types';
-import { formatCurrency, formatDateTime, generateWhatsAppUrl, notificarEntregadorWhatsApp } from '../lib/formatters';
+import { formatCurrency, formatDateTime, generateWhatsAppUrl, notificarEntregadorWhatsApp, gerarMensagemEntregador } from '../lib/formatters';
 import {
   updateOrderStatusInFirestore,
   updateOrderPaymentStatusInFirestore,
@@ -447,18 +448,32 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                 </select>
 
                 {order.entregadorId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const assignedCourier = couriers.find((c) => c.id === order.entregadorId);
-                      notificarEntregadorWhatsApp(order, assignedCourier, store, showToast);
-                    }}
-                    className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer flex-shrink-0 shadow-xs"
-                    title="Notificar entregador no WhatsApp"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Notificar entregador</span>
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const assignedCourier = couriers.find((c) => c.id === order.entregadorId);
+                        notificarEntregadorWhatsApp(order, assignedCourier, store, showToast);
+                      }}
+                      className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      title="Notificar entregador no WhatsApp"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Notificar entregador</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const msg = gerarMensagemEntregador(order, store);
+                        navigator.clipboard.writeText(msg);
+                        showToast('Dados da entrega copiados com sucesso!', 'success');
+                      }}
+                      className="p-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold flex items-center justify-center transition-colors cursor-pointer border border-neutral-200"
+                      title="Copiar texto da entrega para área de transferência"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

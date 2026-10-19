@@ -73,6 +73,9 @@ export interface Store {
   pixCity: string; // Max 15 chars, uppercase, no accents
   pixTestadoEm?: string; // ISO date string de quando a chave foi testada com R$ 1,00
   
+  // Custom vanity URL
+  customSlug?: string;
+  
   // Formas de Pagamento
   pagamentos: StorePaymentMethods;
   

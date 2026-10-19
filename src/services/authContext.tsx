@@ -257,24 +257,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanSenha = senha.trim();
     console.log('[Auth Flow] Iniciando login com e-mail/senha:', cleanEmail);
 
-    // 1. Tentar primeiro via Firebase Auth oficial
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanSenha);
       console.log('[Auth Flow] Login com e-mail/senha aprovado pelo Firebase Auth. UID:', cred.user.uid);
       const profile = await loadUserProfile(cred.user);
 
       if (!profile) {
-        // Fallback básico se perfil não foi retornado mas autenticou
-        const basicProfile: UserProfile = {
-          uid: cred.user.uid,
-          email: cred.user.email || cleanEmail,
-          nome: 'Usuário',
-          role: cleanEmail === 'comercial@pedeai.com.br' ? 'superadmin' : 'owner',
-          ativo: true,
+        return {
+          success: false,
+          message: 'Perfil de usuário não encontrado.',
         };
-        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(basicProfile));
-        setCurrentUser(basicProfile);
-        return { success: true, user: basicProfile };
       }
 
       if (profile.ativo === false) {
@@ -289,39 +281,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { success: true, user: profile };
     } catch (err: any) {
-      // 2. Se falhar no Firebase Auth (por exemplo credencial inválida, usuário criado diretamente no Firestore, ou senha temporária emitida pelo Master)
-      console.warn('[Auth Flow] Firebase Auth não aceitou credencial diretamente. Verificando perfil no Firestore...');
-      try {
-        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
-        const snap = await getDocs(q);
-
-        if (!snap.empty) {
-          const userDoc = snap.docs[0].data() as UserProfile;
-
-          // Verificar se a conta está desativada
-          if (userDoc.ativo === false) {
-            return {
-              success: false,
-              message: 'Esta conta de usuário foi desativada pelo administrador Master. Entre em contato com o suporte.',
-            };
-          }
-
-          // Verificar se a senha informada bate com senhaTemporaria ou senha salva
-          const matchTemp = userDoc.senhaTemporaria && userDoc.senhaTemporaria === cleanSenha;
-          const matchPass = userDoc.senha && userDoc.senha === cleanSenha;
-
-          if (matchTemp || matchPass) {
-            console.log('[Auth Flow] Login autenticado com sucesso via credencial administrativa para:', cleanEmail);
-            localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userDoc));
-            setCurrentUser(userDoc);
-            return { success: true, user: userDoc };
-          }
-        }
-      } catch (firestoreErr) {
-        console.error('[Auth Flow] Erro ao consultar perfil no Firestore:', firestoreErr);
-      }
-
-      // Retorna erro amigável formatado
+      console.error('[Auth Flow] Erro na autenticação Firebase Auth:', err);
       return {
         success: false,
         errorCode: err?.code,

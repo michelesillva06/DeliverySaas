@@ -125,6 +125,7 @@ export const SuperAdminPage: React.FC = () => {
   const [nome, setNome] = useState('');
   const [slug, setSlug] = useState('');
   const [customSlug, setCustomSlug] = useState(false);
+  const [vanitySlug, setVanitySlug] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [nomeResponsavel, setNomeResponsavel] = useState('');
   const [emailResponsavel, setEmailResponsavel] = useState('');
@@ -267,6 +268,7 @@ export const SuperAdminPage: React.FC = () => {
         id: storeId,
         nome: nome.trim(),
         slug: cleanSlug,
+        customSlug: vanitySlug.trim() || undefined,
         logo: '',
         capa: '',
         corPrimaria: '#e11d48',
@@ -1280,6 +1282,22 @@ export const SuperAdminPage: React.FC = () => {
                   </div>
 
                   <div>
+                    <label className="block font-bold text-neutral-700 mb-1">
+                      Link Personalizado (Opcional)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-neutral-400 font-mono text-xs">/</span>
+                      <input
+                        type="text"
+                        value={vanitySlug}
+                        onChange={(e) => setVanitySlug(e.target.value)}
+                        placeholder="ex: minha-loja"
+                        className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono text-xs font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
                     <label className="block font-bold text-neutral-700 mb-1">WhatsApp da Loja (pedidos)</label>
                     <input
                       type="text"
@@ -1968,6 +1986,17 @@ export const SuperAdminPage: React.FC = () => {
                   value={editingStore.nome}
                   onChange={(e) => setEditingStore({ ...editingStore, nome: e.target.value })}
                   className="w-full p-3 border border-neutral-300 rounded-xl font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-neutral-700 mb-1">Link Personalizado (Opcional)</label>
+                <input
+                  type="text"
+                  value={editingStore.customSlug || ''}
+                  onChange={(e) => setEditingStore({ ...editingStore, customSlug: e.target.value || undefined })}
+                  placeholder="ex: minha-loja"
+                  className="w-full p-3 border border-neutral-300 rounded-xl font-mono text-xs font-bold"
                 />
               </div>
 

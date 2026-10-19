@@ -77,11 +77,21 @@ export async function getStoreFromFirestore(storeId: string): Promise<Store | nu
 
 export async function getStoreBySlugFromFirestore(slug: string): Promise<Store | null> {
   try {
-    const q = query(collection(db, 'stores'), where('slug', '==', slug.toLowerCase()));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      return snap.docs[0].data() as Store;
+    const cleanSlug = slug.toLowerCase().trim();
+    // 1. Tentar buscar pelo slug padrão
+    const qSlug = query(collection(db, 'stores'), where('slug', '==', cleanSlug));
+    const snapSlug = await getDocs(qSlug);
+    if (!snapSlug.empty) {
+      return snapSlug.docs[0].data() as Store;
     }
+    
+    // 2. Tentar buscar pelo customSlug (vanity URL)
+    const qCustom = query(collection(db, 'stores'), where('customSlug', '==', cleanSlug));
+    const snapCustom = await getDocs(qCustom);
+    if (!snapCustom.empty) {
+      return snapCustom.docs[0].data() as Store;
+    }
+    
     return null;
   } catch (error) {
     console.error('Erro ao buscar loja por slug no Firestore:', error);

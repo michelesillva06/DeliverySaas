@@ -140,6 +140,29 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
 
   useEffect(() => {
     document.title = `${store.nome} | Cardápio Digital - Pede AI`;
+    
+    // Update PWA Manifest dynamically
+    let manifestMeta = document.querySelector('link[rel="manifest"]');
+    if (!manifestMeta) {
+      manifestMeta = document.createElement('link');
+      manifestMeta.setAttribute('rel', 'manifest');
+      document.head.appendChild(manifestMeta);
+    }
+    
+    const manifest = {
+      name: store.nome,
+      short_name: store.nome.slice(0, 12),
+      icons: [{ src: store.logo || '/logo.png', sizes: '192x192', type: 'image/png' }],
+      start_url: window.location.pathname,
+      display: 'standalone',
+      background_color: '#ffffff',
+      theme_color: store.corPrimaria || '#e11d48'
+    };
+    
+    const stringManifest = JSON.stringify(manifest);
+    const blob = new Blob([stringManifest], { type: 'application/json' });
+    manifestMeta.setAttribute('href', URL.createObjectURL(blob));
+
     const shareImage = store.logo || store.capa;
     if (shareImage) {
       let ogImageMeta = document.querySelector('meta[property="og:image"]');
@@ -150,7 +173,7 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
       }
       ogImageMeta.setAttribute('content', shareImage);
     }
-  }, [store.nome, store.logo, store.capa]);
+  }, [store]);
 
   // Assinar atualizações em tempo real do cardápio exclusivamente via Firestore
   useEffect(() => {
@@ -200,7 +223,7 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
   }, [categories, filteredProducts, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-neutral-100 flex flex-col pb-24 selection:bg-rose-500 selection:text-white">
+    <div className="min-h-screen bg-neutral-100 flex flex-col pb-24 selection:bg-rose-500 selection:text-white text-base">
       {/* Cabeçalho da Loja com Capa e Logo */}
       <CustomerHeader store={store} />
 

@@ -8,6 +8,15 @@ import {
   QrCode,
   Bike,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { Store, Order } from '../../types';
 import { subscribeToOrdersByStore } from '../../services/firestoreService';
 import { formatCurrency } from '../../lib/formatters';
@@ -48,6 +57,19 @@ export const ReportsPage: React.FC = () => {
   const validOrders = useMemo(() => {
     return filteredOrders.filter((o) => o.status !== 'cancelado');
   }, [filteredOrders]);
+
+  const chartData = useMemo(() => {
+    const data = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('pt-BR', { weekday: 'short' });
+      const ordersInDate = validOrders.filter((o) => new Date(o.criadoEm).toDateString() === d.toDateString());
+      const total = ordersInDate.reduce((acc, o) => acc + (o.total || 0), 0);
+      data.push({ name: dateStr, faturamento: total });
+    }
+    return data;
+  }, [validOrders]);
 
   const faturamentoTotal = validOrders.reduce((acc, o) => acc + (o.total || 0), 0);
   const ticketMedio = validOrders.length > 0 ? faturamentoTotal / validOrders.length : 0;
@@ -142,6 +164,22 @@ export const ReportsPage: React.FC = () => {
           >
             Histórico Completo
           </button>
+        </div>
+      </div>
+
+      {/* Gráfico de Faturamento */}
+      <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
+        <h2 className="font-bold text-sm text-neutral-900">Faturamento Diário (Últimos 7 dias)</h2>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis tickFormatter={(value) => `R$${value}`} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Bar dataKey="faturamento" fill="#e11d48" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

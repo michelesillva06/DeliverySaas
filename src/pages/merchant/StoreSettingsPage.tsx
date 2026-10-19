@@ -1703,7 +1703,6 @@ export const StoreSettingsPage: React.FC = () => {
               <img src={storeQrCodeUrl} alt="QR Code" className="w-64 h-64 mx-auto" />
             )}
             <p className="text-base font-bold">Aproxime a câmera do seu celular</p>
-            <p className="text-sm text-neutral-500">ou acesse: {window.location.origin}/#/{store.slug}</p>
           </div>
         </div>
       )}

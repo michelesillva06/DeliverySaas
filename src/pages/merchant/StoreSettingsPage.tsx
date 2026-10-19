@@ -1633,6 +1633,19 @@ export const StoreSettingsPage: React.FC = () => {
                 className="w-full p-3 border border-neutral-200 rounded-xl"
               />
             </div>
+
+            <div>
+              <label className="block font-bold text-neutral-700 mb-1">Som de Pedido Novo:</label>
+              <select
+                value={formData.soundPreference || 'chime'}
+                onChange={(e) => setFormData({ ...formData, soundPreference: e.target.value as any })}
+                className="w-full p-3 border border-neutral-200 rounded-xl font-bold"
+              >
+                <option value="chime">Sino Padrão</option>
+                <option value="bell">Campainha</option>
+                <option value="alert">Alerta Urgente</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex justify-end pt-3 border-t border-neutral-100">

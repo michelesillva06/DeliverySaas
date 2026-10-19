@@ -27,12 +27,19 @@ import {
   imprimirTicketEntrega,
   dispararImpressaoSequencialAoAceitar,
 } from '../../lib/impressao';
-import { playNewOrderAlert } from '../../lib/sound';
+import { playNewOrderAlert, setCurrentSound } from '../../lib/sound';
 import { useToast } from '../../components/Toast';
 
 export const OrdersKanbanPage: React.FC = () => {
   const { store } = useOutletContext<{ store: Store }>();
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (store.soundPreference) {
+      setCurrentSound(store.soundPreference);
+    }
+  }, [store.soundPreference]);
+// ...
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);

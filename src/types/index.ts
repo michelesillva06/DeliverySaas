@@ -103,6 +103,7 @@ export interface Store {
   produtos?: any[];
   zonasEntrega?: any[];
   formasPagamento?: any;
+  soundPreference?: 'chime' | 'bell' | 'alert';
 }
 
 export interface Category {

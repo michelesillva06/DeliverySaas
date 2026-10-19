@@ -20,6 +20,8 @@ import {
   Sparkles,
   Edit2,
   XCircle,
+  Volume2,
+  Play,
 } from 'lucide-react';
 import { Store, DeliveryZone, DayHours } from '../../types';
 import {
@@ -37,6 +39,7 @@ import {
   isStoreOpen,
 } from '../../lib/formatters';
 import { gerarBrCode, gerarQrCodeDataUrl } from '../../lib/pix';
+import { SOUND_OPTIONS, playSoundPreview } from '../../lib/sound';
 import { ImageUploader } from '../../components/ImageUploader';
 import { useToast } from '../../components/Toast';
 import { printService } from '../../services/printService';
@@ -147,6 +150,15 @@ export const StoreSettingsPage: React.FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [printingTest, setPrintingTest] = useState(false);
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+
+  const handlePreviewSound = (soundId: 'chime' | 'bell' | 'alert') => {
+    setPlayingSoundId(soundId);
+    playSoundPreview(soundId);
+    setTimeout(() => {
+      setPlayingSoundId((prev) => (prev === soundId ? null : prev));
+    }, 1200);
+  };
 
   const handlePrintTest = async () => {
     setPrintingTest(true);
@@ -524,11 +536,12 @@ export const StoreSettingsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('whatsapp')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'whatsapp' ? 'bg-neutral-900 text-white shadow-xs' : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50'
           }`}
         >
-          Mensagens WhatsApp
+          <Volume2 className="w-3.5 h-3.5" />
+          <span>Sons & Mensagens</span>
         </button>
         <button
           onClick={() => setActiveTab('qrcode')}
@@ -1634,17 +1647,113 @@ export const StoreSettingsPage: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block font-bold text-neutral-700 mb-1">Som de Pedido Novo:</label>
-              <select
-                value={formData.soundPreference || 'chime'}
-                onChange={(e) => setFormData({ ...formData, soundPreference: e.target.value as any })}
-                className="w-full p-3 border border-neutral-200 rounded-xl font-bold"
-              >
-                <option value="chime">Sino Padrão</option>
-                <option value="bell">Campainha</option>
-                <option value="alert">Alerta Urgente</option>
-              </select>
+            {/* Seção de Som de Notificação de Novo Pedido */}
+            <div className="pt-3 border-t border-neutral-100 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="block font-black text-neutral-900 text-xs flex items-center gap-1.5">
+                    <Volume2 className="w-4 h-4 text-rose-600" />
+                    <span>Som de Alerta de Novo Pedido</span>
+                  </label>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Ouça uma prévia de cada som abaixo, selecione o que mais gostar e salve para tocar no painel de pedidos.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handlePreviewSound(formData.soundPreference || 'chime')}
+                  className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                  title="Testar o som selecionado atualmente"
+                >
+                  <Play className="w-3.5 h-3.5 fill-rose-600 text-rose-600" />
+                  <span>Testar Selecionado</span>
+                </button>
+              </div>
+
+              {/* Grid com os 3 cards de áudio */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {SOUND_OPTIONS.map((opt) => {
+                  const isSelected = (formData.soundPreference || 'chime') === opt.id;
+                  const isPlaying = playingSoundId === opt.id;
+
+                  return (
+                    <div
+                      key={opt.id}
+                      onClick={() => {
+                        setFormData({ ...formData, soundPreference: opt.id });
+                        handlePreviewSound(opt.id);
+                      }}
+                      className={`relative p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-3 text-left ${
+                        isSelected
+                          ? 'border-neutral-900 bg-white shadow-sm ring-2 ring-neutral-900/10'
+                          : 'border-neutral-200/90 bg-neutral-50/70 hover:bg-white hover:border-neutral-300'
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-1">
+                          <span
+                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                              isSelected
+                                ? 'bg-neutral-900 text-white'
+                                : 'bg-neutral-200 text-neutral-600'
+                            }`}
+                          >
+                            {opt.tag}
+                          </span>
+
+                          <input
+                            type="radio"
+                            name="soundPreference"
+                            checked={isSelected}
+                            onChange={() => {
+                              setFormData({ ...formData, soundPreference: opt.id });
+                              handlePreviewSound(opt.id);
+                            }}
+                            className="w-4 h-4 text-neutral-900 focus:ring-neutral-900 cursor-pointer accent-neutral-900"
+                          />
+                        </div>
+
+                        <h4 className="font-extrabold text-xs text-neutral-900 pt-0.5">
+                          {opt.nome}
+                        </h4>
+                        <p className="text-[11px] text-neutral-500 leading-snug">
+                          {opt.descricao}
+                        </p>
+                      </div>
+
+                      {/* Botão Ouvir Prévia */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData({ ...formData, soundPreference: opt.id });
+                          handlePreviewSound(opt.id);
+                        }}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          isPlaying
+                            ? 'bg-rose-600 text-white shadow-xs animate-pulse'
+                            : isSelected
+                            ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-2xs'
+                            : 'bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-200'
+                        }`}
+                      >
+                        {isPlaying ? (
+                          <>
+                            <Volume2 className="w-3.5 h-3.5 animate-bounce" />
+                            <span>Tocando Som...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Ouvir Prévia</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -1655,7 +1764,7 @@ export const StoreSettingsPage: React.FC = () => {
               className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{saving ? 'Gravando no Firestore...' : 'Salvar Modelos'}</span>
+              <span>{saving ? 'Gravando no Firestore...' : 'Salvar Configurações'}</span>
             </button>
           </div>
         </form>

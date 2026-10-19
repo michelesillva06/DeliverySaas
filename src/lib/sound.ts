@@ -40,13 +40,68 @@ function playTone(freq: number, startTime: number, duration: number, ctx: AudioC
   osc.stop(startTime + duration);
 }
 
-/**
- * Executa uma sequência melódica de "ding-dong" de aviso de pedido
- */
-let currentSound = 'chime'; // 'chime', 'bell', 'alert'
+let currentSound: 'chime' | 'bell' | 'alert' = 'chime';
 
 export function setCurrentSound(sound: 'chime' | 'bell' | 'alert') {
   currentSound = sound;
+}
+
+export function getCurrentSound(): 'chime' | 'bell' | 'alert' {
+  return currentSound;
+}
+
+export interface SoundOption {
+  id: 'chime' | 'bell' | 'alert';
+  nome: string;
+  descricao: string;
+  tag: string;
+}
+
+export const SOUND_OPTIONS: SoundOption[] = [
+  {
+    id: 'chime',
+    nome: 'Sino Melódico',
+    descricao: 'Sequência ascendente harmônica de 3 notas suaves e nítidas',
+    tag: 'Padrão Recomendado',
+  },
+  {
+    id: 'bell',
+    nome: 'Campainha de Balcão',
+    descricao: 'Dois toques elegantes e tradicionais de sino de atendimento',
+    tag: 'Clássico',
+  },
+  {
+    id: 'alert',
+    nome: 'Alerta Rápido & Urgente',
+    descricao: 'Pulsos sonoros dinâmicos de alta atenção para cozinhas movimentadas',
+    tag: 'Mais Chamativo',
+  },
+];
+
+/**
+ * Toca a prévia do som especificado, independente do estado de mudo (para teste pelo usuário)
+ */
+export function playSoundPreview(sound: 'chime' | 'bell' | 'alert') {
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    if (sound === 'chime') {
+      playTone(659.25, now, 0.32, ctx);
+      playTone(783.99, now + 0.16, 0.32, ctx);
+      playTone(1046.5, now + 0.32, 0.55, ctx);
+    } else if (sound === 'bell') {
+      playTone(880, now, 0.22, ctx);
+      playTone(880, now + 0.24, 0.5, ctx);
+    } else if (sound === 'alert') {
+      playTone(523.25, now, 0.1, ctx);
+      playTone(783.99, now + 0.14, 0.1, ctx);
+      playTone(523.25, now + 0.28, 0.1, ctx);
+      playTone(1046.5, now + 0.42, 0.35, ctx);
+    }
+  } catch (err) {
+    console.warn('Web Audio não pôde iniciar sem interação prévia:', err);
+  }
 }
 
 /**
@@ -54,28 +109,8 @@ export function setCurrentSound(sound: 'chime' | 'bell' | 'alert') {
  */
 export function playChime() {
   if (isMuted) return;
-  try {
-    const ctx = getAudioContext();
-    const now = ctx.currentTime;
-    
-    if (currentSound === 'chime') {
-      playTone(659.25, now, 0.35, ctx);
-      playTone(783.99, now + 0.18, 0.35, ctx);
-      playTone(1046.5, now + 0.36, 0.6, ctx);
-    } else if (currentSound === 'bell') {
-      playTone(880, now, 0.2, ctx);
-      playTone(880, now + 0.3, 0.5, ctx);
-    } else if (currentSound === 'alert') {
-      playTone(440, now, 0.1, ctx);
-      playTone(880, now + 0.2, 0.1, ctx);
-      playTone(440, now + 0.4, 0.1, ctx);
-      playTone(880, now + 0.6, 0.3, ctx);
-    }
-  } catch (err) {
-    console.warn('Web Audio não pôde iniciar sem interação prévia:', err);
-  }
+  playSoundPreview(currentSound);
 }
-// ... rest of the file
 
 export const playNewOrderAlert = playChime;
 

@@ -39,7 +39,6 @@ export const OrdersKanbanPage: React.FC = () => {
       setCurrentSound(store.soundPreference);
     }
   }, [store.soundPreference]);
-// ...
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);

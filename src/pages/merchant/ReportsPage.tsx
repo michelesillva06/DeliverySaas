@@ -176,7 +176,7 @@ export const ReportsPage: React.FC = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis tickFormatter={(value) => `R$${value}`} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: any) => [formatCurrency(Number(value) || 0), 'Faturamento']} />
               <Bar dataKey="faturamento" fill="#e11d48" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

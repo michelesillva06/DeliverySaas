@@ -36,7 +36,6 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setQuantity(1);
       setObs('');
       const initialSel: { [groupId: string]: string[] } = {};
-      // Se tiver grupos obrigatórios com min=1 e max=1, pode pré-selecionar a primeira opção ativa
       optionGroups.forEach((g) => {
         if (product.optionGroupIds?.includes(g.id)) {
           if (g.obrigatorio && g.min === 1 && g.max === 1 && g.opcoes.length > 0) {
@@ -104,7 +103,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       });
     });
 
-    const unit = product.preco + optionsSum;
+    const base = product.precoPromocional && product.precoPromocional < product.preco ? product.precoPromocional : product.preco;
+    const unit = base + optionsSum;
     const total = unit * quantity;
     return { unitPrice: unit, totalPrice: total, flatSelectedOptions: flat };
   }, [product, activeGroups, selections, quantity]);
@@ -116,10 +116,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     const isSingle = group.max === 1;
 
     if (isSingle) {
-      // Radio mode: substitui
       setSelections((prev) => ({ ...prev, [group.id]: [optionId] }));
     } else {
-      // Checkbox mode: toggle respeitando max
       if (current.includes(optionId)) {
         setSelections((prev) => ({
           ...prev,
@@ -143,13 +141,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
       <div
-        className="bg-white w-full sm:max-w-lg max-h-[90vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300"
+        className="bg-white w-full sm:max-w-xl max-h-[92vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Imagem e Botão Fechar */}
-        <div className="relative w-full h-48 sm:h-56 bg-neutral-100 flex-shrink-0">
+        <div className="relative w-full h-52 sm:h-64 bg-neutral-100 flex-shrink-0">
           {product.foto ? (
             <img
               src={product.foto}
@@ -159,29 +157,40 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center font-black text-5xl text-neutral-300 bg-neutral-100 select-none">
+            <div className="w-full h-full flex items-center justify-center font-black text-6xl text-neutral-300 bg-neutral-100 select-none">
               {product.nome ? product.nome.charAt(0).toUpperCase() : '?'}
             </div>
           )}
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors backdrop-blur-xs"
-            aria-label="Fechar"
+            className="absolute top-4 right-4 w-11 h-11 bg-black/60 hover:bg-black/80 text-white rounded-full flex items-center justify-center transition-colors shadow-md backdrop-blur-xs"
+            aria-label="Fechar modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6 stroke-[2.5]" />
           </button>
         </div>
 
         {/* Informações e Grupos de Complementos (Scroll) */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1 divide-y divide-neutral-100">
-          {/* Título e Descrição */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 divide-y divide-neutral-100">
+          {/* Título, Descrição e Preço */}
           <div>
-            <h2 className="text-xl font-bold text-neutral-900 leading-tight">{product.nome}</h2>
+            <h2 className="text-2xl sm:text-3xl font-black text-neutral-900 leading-tight">
+              {product.nome}
+            </h2>
             {product.descricao && (
-              <p className="mt-1.5 text-sm text-neutral-600 leading-relaxed">{product.descricao}</p>
+              <p className="mt-2 text-base text-neutral-600 leading-relaxed font-normal">
+                {product.descricao}
+              </p>
             )}
-            <div className="mt-2 text-lg font-bold" style={{ color: primaryColor }}>
-              {formatCurrency(product.preco)}
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-black tracking-tight" style={{ color: primaryColor }}>
+                {formatCurrency(product.precoPromocional || product.preco)}
+              </span>
+              {product.precoPromocional && product.precoPromocional < product.preco && (
+                <span className="text-base text-neutral-400 line-through">
+                  {formatCurrency(product.preco)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -195,36 +204,36 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
             let ruleLabelText = '';
             if (!isObrigatorio) {
-              if (max === 1) ruleLabelText = 'Opcional — escolha até 1 opção';
-              else ruleLabelText = `Opcional — escolha até ${max} opções (${currentSelected.length}/${max})`;
+              if (max === 1) ruleLabelText = 'Opcional • Escolha até 1 opção';
+              else ruleLabelText = `Opcional • Escolha até ${max} opções (${currentSelected.length}/${max})`;
             } else {
-              if (min === 1 && max === 1) ruleLabelText = 'Escolha 1 opção';
-              else if (min === max && max > 1) ruleLabelText = `Obrigatório — escolha ${max} opções (${currentSelected.length}/${max})`;
+              if (min === 1 && max === 1) ruleLabelText = 'Obrigatório • Escolha 1 opção';
+              else if (min === max && max > 1) ruleLabelText = `Obrigatório • Escolha exatamente ${max} opções (${currentSelected.length}/${max})`;
               else {
                 const requiredMin = min > 0 ? min : 1;
-                ruleLabelText = `Obrigatório — escolha de ${requiredMin} até ${max} opções (${currentSelected.length}/${max})`;
+                ruleLabelText = `Obrigatório • Escolha de ${requiredMin} até ${max} opções (${currentSelected.length}/${max})`;
               }
             }
 
             return (
-              <div key={group.id} className="pt-4 first:pt-0">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-1.5">
+              <div key={group.id} className="pt-5 first:pt-0">
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-black text-neutral-900">
                       {group.nome}
-                      {isObrigatorio && (
-                        <span className="text-[10px] uppercase font-extrabold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
-                          Obrigatório
-                        </span>
-                      )}
                     </h3>
-                    <p className="text-xs font-medium text-neutral-500">
-                      {ruleLabelText}
-                    </p>
+                    {isObrigatorio && (
+                      <span className="text-xs uppercase font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md">
+                        Obrigatório
+                      </span>
+                    )}
                   </div>
+                  <p className="text-sm font-semibold text-neutral-500 mt-0.5">
+                    {ruleLabelText}
+                  </p>
                 </div>
 
-                <div className="space-y-1.5 mt-2">
+                <div className="space-y-2 mt-2">
                   {group.opcoes
                     .filter((op) => op.ativo)
                     .map((opcao) => {
@@ -232,37 +241,37 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                       const isMaxReached = !isSingle && currentSelected.length >= group.max && !isChecked;
 
                       return (
-                        <label
+                        <div
                           key={opcao.id}
                           onClick={() => !isMaxReached && handleToggleOption(group, opcao.id)}
-                          className={`flex items-center justify-between p-3 rounded-xl border text-sm transition-all cursor-pointer ${
+                          className={`flex items-center justify-between p-4 rounded-2xl border min-h-[54px] text-base transition-all cursor-pointer select-none ${
                             isChecked
-                              ? 'border-neutral-900 bg-neutral-50 font-medium'
+                              ? 'border-neutral-900 bg-neutral-50 font-bold shadow-2xs'
                               : isMaxReached
-                              ? 'opacity-40 border-neutral-200 cursor-not-allowed'
-                              : 'border-neutral-200 hover:border-neutral-300'
+                              ? 'opacity-40 border-neutral-200 cursor-not-allowed bg-neutral-50/50'
+                              : 'border-neutral-200 hover:border-neutral-400 bg-white'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3.5 min-w-0">
                             <div
-                              className={`w-5 h-5 flex items-center justify-center rounded-${
-                                isSingle ? 'full' : 'md'
-                              } border transition-colors ${
+                              className={`w-6 h-6 flex items-center justify-center rounded-${
+                                isSingle ? 'full' : 'lg'
+                              } border-2 transition-colors flex-shrink-0 ${
                                 isChecked
                                   ? 'bg-neutral-900 border-neutral-900 text-white'
-                                  : 'border-neutral-300'
+                                  : 'border-neutral-300 bg-white'
                               }`}
                             >
-                              {isChecked && <Check className="w-3.5 h-3.5" />}
+                              {isChecked && <Check className="w-4 h-4 stroke-[3]" />}
                             </div>
-                            <span>{opcao.nome}</span>
+                            <span className="text-neutral-900 break-words">{opcao.nome}</span>
                           </div>
                           {opcao.preco > 0 && (
-                            <span className="text-xs font-semibold text-neutral-600">
+                            <span className="text-base font-extrabold text-neutral-800 flex-shrink-0 ml-3">
                               +{formatCurrency(opcao.preco)}
                             </span>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                 </div>
@@ -271,62 +280,62 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           })}
 
           {/* Campo de Observações */}
-          <div className="pt-4">
-            <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5">
-              Observações do item
+          <div className="pt-5">
+            <label className="block text-sm font-black text-neutral-800 uppercase tracking-wider mb-2">
+              Alguma observação para este item?
             </label>
             <textarea
               value={obs}
               onChange={(e) => setObs(e.target.value)}
-              placeholder="Ex: sem cebola, ponto da carne mais passado, talheres descartáveis..."
+              placeholder="Ex: sem cebola, ponto da carne bem passado, talheres descartáveis..."
               maxLength={200}
               rows={2}
-              className="w-full text-sm p-3 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 resize-none"
+              className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-neutral-900 resize-none text-neutral-900"
             />
           </div>
         </div>
 
         {/* Rodapé Fixo com Contador e Botão */}
-        <div className="p-4 border-t border-neutral-100 bg-white flex flex-col gap-2">
+        <div className="p-4 sm:p-5 border-t border-neutral-200 bg-white flex flex-col gap-3">
           {!isValid && (
-            <div className="flex items-center gap-1.5 text-xs text-rose-600 font-medium">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-800 font-semibold">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600" />
               <span>{errors[0]}</span>
             </div>
           )}
           <div className="flex items-center gap-3">
-            {/* Contador de Quantidade */}
-            <div className="flex items-center border border-neutral-200 rounded-xl p-1 bg-neutral-50">
+            {/* Contador de Quantidade (min 48px touch targets) */}
+            <div className="flex items-center border-2 border-neutral-200 rounded-2xl p-1 bg-neutral-50">
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                 disabled={quantity <= 1}
-                className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white text-neutral-700 disabled:opacity-40 transition-colors"
+                className="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-white text-neutral-800 disabled:opacity-30 transition-colors"
                 aria-label="Diminuir quantidade"
               >
-                <Minus className="w-4 h-4" />
+                <Minus className="w-5 h-5 stroke-[2.5]" />
               </button>
-              <span className="w-8 text-center text-sm font-bold text-neutral-900">{quantity}</span>
+              <span className="w-10 text-center text-lg font-black text-neutral-900">{quantity}</span>
               <button
                 type="button"
                 onClick={() => setQuantity((q) => q + 1)}
-                className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white text-neutral-700 transition-colors"
+                className="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-white text-neutral-800 transition-colors"
                 aria-label="Aumentar quantidade"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5 stroke-[2.5]" />
               </button>
             </div>
 
-            {/* Botão Adicionar ao Carrinho */}
+            {/* Botão Adicionar ao Pedido */}
             <button
               type="button"
               onClick={handleConfirm}
               disabled={!isValid}
-              className="flex-1 py-3.5 px-4 rounded-xl font-bold text-sm text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-between"
+              className="flex-1 min-h-[54px] py-4 px-5 rounded-2xl font-black text-base sm:text-lg text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-between"
               style={{ backgroundColor: primaryColor }}
             >
               <span>Adicionar ao Pedido</span>
-              <span>{formatCurrency(totalPrice)}</span>
+              <span className="tracking-tight">{formatCurrency(totalPrice)}</span>
             </button>
           </div>
         </div>

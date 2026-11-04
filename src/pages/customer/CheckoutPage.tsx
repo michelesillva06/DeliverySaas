@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   getStoreBySlugFromFirestore,
@@ -21,7 +22,7 @@ import {
   createOrderInFirestore,
   ensureAnonymousCustomerAuth,
 } from '../../services/firestoreService';
-import { Store, DeliveryZone, PaymentMethod, PaymentStatus, Order } from '../../types';
+import { Store, DeliveryZone, PaymentMethod, PaymentStatus } from '../../types';
 import { useCart, CartProvider } from '../../services/cartContext';
 import { useAuth } from '../../services/authContext';
 import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl, getPaymentMethodLabel } from '../../lib/formatters';
@@ -53,7 +54,7 @@ export const CheckoutWrapper: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 text-xs font-bold text-neutral-500">
+      <div className="min-h-screen flex items-center justify-center p-4 text-base font-bold text-neutral-600 bg-neutral-50">
         Carregando dados da loja...
       </div>
     );
@@ -61,7 +62,7 @@ export const CheckoutWrapper: React.FC = () => {
 
   if (!store) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 text-sm font-bold text-neutral-700">
+      <div className="min-h-screen flex items-center justify-center p-4 text-base font-bold text-neutral-700 bg-neutral-50">
         Loja não encontrada.
       </div>
     );
@@ -94,7 +95,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
 
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
 
-  // Formulário do Cliente (recupera preferências locais de preenchimento)
+  // Formulário do Cliente
   const [nome, setNome] = useState(() => localStorage.getItem('checkout_nome') || '');
   const [telefone, setTelefone] = useState(() => localStorage.getItem('checkout_tel') || '');
 
@@ -113,11 +114,11 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     return 'whatsapp';
   });
   const [trocoPara, setTrocoPara] = useState<string>('');
-  const [lgpdConsent, setLgpdConsent] = useState(true);
+  const [lgpdConsent] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const orderAttemptIdRef = React.useRef<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const orderAttemptIdRef = useRef<string | null>(null);
 
-  // Escutar zonas de entrega em tempo real do Firestore
   useEffect(() => {
     trackStorefrontEvent(store.id, store.slug, 'iniciou_pedido');
     const unsub = subscribeToDeliveryZonesByStore(store.id, (zones) => {
@@ -126,7 +127,6 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     return () => unsub();
   }, [store.id]);
 
-  // Atualizar bairro selecionado no carrinho para recalcular a taxa
   const handleZoneChange = (zoneId: string) => {
     setBairroId(zoneId);
     const found = deliveryZones.find((z) => z.id === zoneId) || null;
@@ -139,12 +139,14 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
   if (items.length === 0) {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6 text-center">
-        <ShoppingBag className="w-16 h-16 text-neutral-300 mb-3" />
-        <h2 className="text-xl font-bold text-neutral-900">Seu carrinho está vazio</h2>
-        <p className="text-sm text-neutral-500 mt-1">Adicione itens antes de prosseguir com o pedido.</p>
+        <ShoppingBag className="w-20 h-20 text-neutral-300 mb-4" />
+        <h2 className="text-2xl font-black text-neutral-900">Sua sacola está vazia</h2>
+        <p className="text-base text-neutral-500 mt-2">
+          Adicione itens ao cardápio antes de prosseguir com a finalização do pedido.
+        </p>
         <Link
           to={`/${store.slug}`}
-          className="mt-4 px-5 py-2.5 rounded-xl font-bold text-xs text-white"
+          className="mt-6 px-6 py-3.5 rounded-2xl font-black text-base text-white shadow-md min-h-[48px] inline-flex items-center"
           style={{ backgroundColor: store.corPrimaria }}
         >
           Voltar ao Cardápio
@@ -153,22 +155,28 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     );
   }
 
-  const handleSubmitOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmitOrder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
 
-    if (isSubmitting) return; // Bloquear duplo clique rigorosamente
+    if (isSubmitting) return;
+
+    setSubmissionError(null);
 
     if (!openStatus.isOpen) {
-      showToast(openStatus.reason || 'A loja está fechada no momento.', 'error');
+      const msg = openStatus.reason || 'A loja está fechada no momento e não pode receber pedidos.';
+      setSubmissionError(msg);
+      showToast(msg, 'error');
       return;
     }
 
     if (subtotal < (store.pedidoMinimo || 0)) {
-      showToast(`O pedido mínimo é ${formatCurrency(store.pedidoMinimo)}.`, 'error');
+      const msg = `O pedido mínimo deste estabelecimento é ${formatCurrency(store.pedidoMinimo)}.`;
+      setSubmissionError(msg);
+      showToast(msg, 'error');
       return;
     }
 
-    // Validação e higienização robusta via Zod Schema
+    // Validação dos dados do formulário
     const validation = validateAndSanitizeCheckout({
       nome,
       telefone,
@@ -185,6 +193,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     });
 
     if (!validation.success) {
+      setSubmissionError(validation.error);
       showToast(validation.error, 'error');
       return;
     }
@@ -200,7 +209,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     setIsSubmitting(true);
 
     try {
-      // Salvar preferências de preenchimento de formulário no localStorage
+      // Salvar dados no localStorage para conforto do cliente em compras futuras
       localStorage.setItem('checkout_nome', cleanNome);
       localStorage.setItem('checkout_tel', cleanTel);
       if (orderType === 'entrega' && cleanEndereco) {
@@ -208,19 +217,18 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         localStorage.setItem('checkout_num', cleanEndereco.numero);
       }
 
-      // Obter customerUid (da sessão autenticada ou identificador seguro do cliente)
+      // Obter identificador seguro do cliente (Uid Firebase ou UID local seguro)
       let customerUid = currentUser?.uid;
       if (!customerUid) {
         customerUid = await ensureAnonymousCustomerAuth();
       }
 
-      // Gerar ou reutilizar chave de idempotência para evitar pedidos duplicados
+      // Reutilizar attemptOrderId para idempotência garantida
       if (!orderAttemptIdRef.current) {
         orderAttemptIdRef.current = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       }
       const attemptOrderId = orderAttemptIdRef.current;
 
-      // Gravar pedido com dados validados e recalculados pelo backend no Firestore
       const orderPayload = limparObjeto({
         id: attemptOrderId,
         storeId: store.id,
@@ -255,10 +263,11 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         status: 'novo' as const,
       });
 
+      // Gravar no Firestore
       const order = await createOrderInFirestore(orderPayload);
       trackStorefrontEvent(store.id, store.slug, 'concluiu_pedido');
 
-      // Limpar chave de tentativa e carrinho
+      // Limpar chave de tentativa e carrinho SOMENTE após persistência confirmada
       orderAttemptIdRef.current = null;
       clearCart();
 
@@ -307,7 +316,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       }\n\n`;
       whatsMsg += `*Acompanhe seu pedido em tempo real:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
-      // Tentar abrir WhatsApp da loja apenas se o número for válido e configurado
+      // Tentar abrir WhatsApp da loja
       const storePhoneDigits = (store.whatsapp || '').replace(/\D/g, '');
       if (storePhoneDigits && storePhoneDigits.length >= 10) {
         try {
@@ -315,143 +324,158 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         } catch (e) {
           console.warn('Redirecionamento ao WhatsApp bloqueado pelo navegador:', e);
         }
-      } else {
-        showToast('Pedido recebido pela loja! WhatsApp não configurado.', 'info');
       }
 
       showToast(`Pedido #${order.numero} confirmado com sucesso!`, 'success');
       navigate(`/${store.slug}/pedido/${order.id}`);
     } catch (err: any) {
       console.error('Erro ao registrar pedido:', err);
-      showToast(err?.message || 'Erro ao processar pedido no sistema. Tente novamente.', 'error');
+      let friendlyError = 'Não foi possível registrar seu pedido neste momento.';
+      if (err?.code === 'unavailable' || err?.message?.includes('network')) {
+        friendlyError = 'Falha de conexão com a internet. Verifique sua rede e tente novamente.';
+      } else if (err?.code === 'permission-denied') {
+        friendlyError = 'Não foi possível registrar o pedido devido a uma restrição de segurança no banco de dados. Tente novamente.';
+      } else if (err?.message) {
+        friendlyError = err.message;
+      }
+      setSubmissionError(friendlyError);
+      showToast(friendlyError, 'error');
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 pb-20">
+    <div className="min-h-screen bg-neutral-100 pb-24 text-base">
       {/* Topo do Checkout com Marca da Loja */}
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
           <Link
             to={`/${store.slug}`}
-            className="flex items-center gap-2 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors group min-w-0"
+            className="flex items-center gap-2.5 text-base font-bold text-neutral-700 hover:text-neutral-950 transition-colors group min-w-0"
           >
-            <ArrowLeft className="w-4 h-4 text-neutral-500 group-hover:text-neutral-900 transition-colors flex-shrink-0" />
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-[10px] text-neutral-500 flex-shrink-0">
+            <ArrowLeft className="w-5 h-5 text-neutral-500 group-hover:text-neutral-900 transition-colors flex-shrink-0" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-black text-xs text-neutral-500 flex-shrink-0">
                 {store.logo ? (
                   <img src={store.logo} alt={store.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   store.nome.slice(0, 2).toUpperCase()
                 )}
               </div>
-              <span className="font-black text-xs text-[#111111] truncate hidden sm:inline max-w-[160px]">
+              <span className="font-black text-base text-[#111111] truncate hidden sm:inline max-w-[200px]">
                 {store.nome}
               </span>
             </div>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-xs sm:text-sm text-[#111111] bg-neutral-100 px-3 py-1.5 rounded-xl border border-neutral-200/80">
-              Finalizar Pedido
-            </span>
-          </div>
+          <span className="font-black text-base text-[#111111] bg-neutral-100 px-4 py-2 rounded-2xl border border-neutral-300">
+            Finalizar Pedido
+          </span>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         <form onSubmit={handleSubmitOrder} className="space-y-6">
-          {/* Seção 1: Seus Dados */}
-          <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-4">
-            <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-neutral-900 text-white text-xs flex items-center justify-center font-bold">
+          {/* Seção 1: Seus Dados para Contato */}
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200 shadow-sm space-y-4">
+            <h2 className="text-xl font-black text-neutral-900 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-neutral-900 text-white text-base flex items-center justify-center font-black">
                 1
               </span>
               Seus Dados para Contato
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Seu Nome Completo *</label>
+                <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                  Seu Nome Completo *
+                </label>
                 <input
                   type="text"
                   required
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   placeholder="Ex: João da Silva"
-                  className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                  className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 focus:outline-none min-h-[50px] text-neutral-900 bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">WhatsApp / Telefone *</label>
+                <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                  WhatsApp / Telefone *
+                </label>
                 <input
                   type="tel"
                   required
                   value={telefone}
                   onChange={(e) => setTelefone(e.target.value)}
                   placeholder="(92) 99999-9999"
-                  className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                  className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 focus:outline-none min-h-[50px] text-neutral-900 bg-white"
                 />
               </div>
             </div>
           </div>
 
-          {/* Seção 2: Entrega ou Retirada */}
-          <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-4">
-            <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-neutral-900 text-white text-xs flex items-center justify-center font-bold">
+          {/* Seção 2: Como prefere receber? */}
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200 shadow-sm space-y-5">
+            <h2 className="text-xl font-black text-neutral-900 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-neutral-900 text-white text-base flex items-center justify-center font-black">
                 2
               </span>
               Como prefere receber?
             </h2>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {store.aceitaEntrega !== false && (
-                <button
-                  type="button"
+                <div
                   onClick={() => setOrderType('entrega')}
-                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  className={`p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer select-none ${
                     orderType === 'entrega'
-                      ? 'border-neutral-900 bg-neutral-50 shadow-xs'
-                      : 'border-neutral-200 hover:border-neutral-300'
+                      ? 'border-neutral-900 bg-neutral-50 shadow-sm'
+                      : 'border-neutral-200 hover:border-neutral-400 bg-white'
                   }`}
                 >
-                  <p className="font-bold text-sm text-neutral-900">🛵 Entrega</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">Receba no seu endereço</p>
-                </button>
+                  <p className="font-black text-lg text-neutral-900 flex items-center gap-2">
+                    <span>🛵</span> Entrega em Domicílio
+                  </p>
+                  <p className="text-sm font-medium text-neutral-600 mt-1">
+                    Receba no conforto do seu endereço
+                  </p>
+                </div>
               )}
 
               {store.aceitaRetirada !== false && (
-                <button
-                  type="button"
+                <div
                   onClick={() => setOrderType('retirada')}
-                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  className={`p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer select-none ${
                     orderType === 'retirada'
-                      ? 'border-neutral-900 bg-neutral-50 shadow-xs'
-                      : 'border-neutral-200 hover:border-neutral-300'
+                      ? 'border-neutral-900 bg-neutral-50 shadow-sm'
+                      : 'border-neutral-200 hover:border-neutral-400 bg-white'
                   }`}
                 >
-                  <p className="font-bold text-sm text-neutral-900">🛍️ Retirada no Balcão</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">Retire sem taxa de entrega</p>
-                </button>
+                  <p className="font-black text-lg text-neutral-900 flex items-center gap-2">
+                    <span>🛍️</span> Retirada no Balcão
+                  </p>
+                  <p className="text-sm font-medium text-neutral-600 mt-1">
+                    Retire na loja sem taxa de entrega
+                  </p>
+                </div>
               )}
             </div>
 
             {/* Endereço de Entrega */}
             {orderType === 'entrega' ? (
-              <div className="pt-3 border-t border-neutral-100 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="pt-4 border-t border-neutral-200 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
                       Bairro Atendido *
                     </label>
                     <select
                       required
                       value={bairroId}
                       onChange={(e) => handleZoneChange(e.target.value)}
-                      className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl bg-white focus:ring-1 focus:ring-neutral-900 font-medium"
+                      className="w-full text-base p-4 border border-neutral-300 rounded-2xl bg-white focus:ring-2 focus:ring-neutral-900 font-semibold text-neutral-900 min-h-[52px]"
                     >
                       <option value="">Selecione seu bairro...</option>
                       {deliveryZones.map((z) => (
@@ -463,59 +487,67 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-neutral-700 mb-1">Rua / Avenida *</label>
+                    <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                      Rua / Avenida *
+                    </label>
                     <input
                       type="text"
                       required
                       value={rua}
                       onChange={(e) => setRua(e.target.value)}
                       placeholder="Ex: Rua Rio Purus"
-                      className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                      className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 min-h-[50px] text-neutral-900 bg-white"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-neutral-700 mb-1">Número *</label>
+                    <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                      Número *
+                    </label>
                     <input
                       type="text"
                       required
                       value={numero}
                       onChange={(e) => setNumero(e.target.value)}
                       placeholder="Ex: 120"
-                      className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                      className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 min-h-[50px] text-neutral-900 bg-white"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-neutral-700 mb-1">Complemento</label>
+                    <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                      Complemento
+                    </label>
                     <input
                       type="text"
                       value={complemento}
                       onChange={(e) => setComplemento(e.target.value)}
                       placeholder="Ex: Apto 402, Bloco C"
-                      className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                      className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 min-h-[50px] text-neutral-900 bg-white"
                     />
                   </div>
 
                   <div className="col-span-2 sm:col-span-1">
-                    <label className="block text-xs font-bold text-neutral-700 mb-1">Ponto de Referência</label>
+                    <label className="block text-sm font-black text-neutral-800 mb-1.5 uppercase tracking-wide">
+                      Ponto de Referência
+                    </label>
                     <input
                       type="text"
                       value={referencia}
                       onChange={(e) => setReferencia(e.target.value)}
                       placeholder="Ex: Em frente à praça"
-                      className="w-full text-xs sm:text-sm p-3 border border-neutral-200 rounded-xl focus:ring-1 focus:ring-neutral-900"
+                      className="w-full text-base p-4 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-neutral-900 min-h-[50px] text-neutral-900 bg-white"
                     />
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs text-neutral-600">
-                <p className="font-bold text-neutral-800">Endereço da Loja para Retirada:</p>
-                <p className="mt-0.5">{store.endereco || 'Endereço informado pelo estabelecimento'}</p>
-                <p className="mt-1 text-emerald-700 font-bold">
+              <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 text-base text-neutral-700">
+                <p className="font-black text-neutral-900">Endereço da Loja para Retirada:</p>
+                <p className="mt-1">{store.endereco || 'Endereço informado pelo estabelecimento'}</p>
+                <p className="mt-2 text-emerald-800 font-bold">
                   Previsão para retirada: ~{store.tempoEstimadoRetiradaMin || 25} minutos após a confirmação.
                 </p>
               </div>
@@ -523,88 +555,94 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
           </div>
 
           {/* Seção 3: Forma de Pagamento */}
-          <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-4">
-            <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-neutral-900 text-white text-xs flex items-center justify-center font-bold">
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200 shadow-sm space-y-4">
+            <h2 className="text-xl font-black text-neutral-900 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-neutral-900 text-white text-base flex items-center justify-center font-black">
                 3
               </span>
               Forma de Pagamento
             </h2>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {store.pagamentos?.pix !== false && (
-                <label
+                <div
                   onClick={() => setPaymentMethod('pix')}
-                  className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
-                    paymentMethod === 'pix' ? 'border-neutral-900 bg-neutral-50 font-medium' : 'border-neutral-200'
+                  className={`flex items-center justify-between p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all min-h-[64px] select-none ${
+                    paymentMethod === 'pix' ? 'border-neutral-900 bg-neutral-50 shadow-sm' : 'border-neutral-200 bg-white hover:border-neutral-400'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <QrCode className="w-5 h-5 text-teal-600" />
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
+                      <QrCode className="w-6 h-6 text-teal-600" />
+                    </div>
                     <div>
-                      <p className="text-sm font-bold text-neutral-900">Pix com QR Code e Copia e Cola</p>
-                      <p className="text-xs text-neutral-500">Pague pelo aplicativo do seu banco com rapidez</p>
+                      <p className="text-base font-black text-neutral-900">Pix com Chave Copia e Cola / QR Code</p>
+                      <p className="text-sm text-neutral-500 font-medium">Pague pelo aplicativo do seu banco</p>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
-                    Recomendado
+                  <span className="text-xs font-black text-teal-800 bg-teal-100 px-3 py-1 rounded-full uppercase">
+                    Rápido
                   </span>
-                </label>
+                </div>
               )}
 
               {store.pagamentos?.cartaoEntrega !== false && (
-                <label
+                <div
                   onClick={() => setPaymentMethod('cartao_entrega')}
-                  className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  className={`flex items-center justify-between p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all min-h-[64px] select-none ${
                     paymentMethod === 'cartao_entrega'
-                      ? 'border-neutral-900 bg-neutral-50 font-medium'
-                      : 'border-neutral-200'
+                      ? 'border-neutral-900 bg-neutral-50 shadow-sm'
+                      : 'border-neutral-200 bg-white hover:border-neutral-400'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <CreditCard className="w-5 h-5 text-indigo-600" />
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center flex-shrink-0">
+                      <CreditCard className="w-6 h-6 text-indigo-600" />
+                    </div>
                     <div>
-                      <p className="text-sm font-bold text-neutral-900">
+                      <p className="text-base font-black text-neutral-900">
                         {orderType === 'entrega' ? 'Cartão na Entrega' : 'Cartão na Retirada'}
                       </p>
-                      <p className="text-xs text-neutral-500">
+                      <p className="text-sm text-neutral-500 font-medium">
                         {orderType === 'entrega'
-                          ? 'O entregador levará a maquininha (Débito/Crédito)'
-                          : 'Pague na maquininha ao retirar seu pedido no balcão'}
+                          ? 'O entregador levará a maquininha de cartão (Débito/Crédito)'
+                          : 'Pague na maquininha ao retirar no balcão'}
                       </p>
                     </div>
                   </div>
-                </label>
+                </div>
               )}
 
               {store.pagamentos?.dinheiro !== false && (
                 <div
-                  className={`p-3.5 rounded-xl border transition-all ${
-                    paymentMethod === 'dinheiro' ? 'border-neutral-900 bg-neutral-50' : 'border-neutral-200'
+                  className={`p-4 sm:p-5 rounded-2xl border-2 transition-all min-h-[64px] ${
+                    paymentMethod === 'dinheiro' ? 'border-neutral-900 bg-neutral-50 shadow-sm' : 'border-neutral-200 bg-white'
                   }`}
                 >
-                  <label
+                  <div
                     onClick={() => setPaymentMethod('dinheiro')}
-                    className="flex items-center justify-between cursor-pointer"
+                    className="flex items-center justify-between cursor-pointer select-none"
                   >
-                    <div className="flex items-center gap-3">
-                      <DollarSign className="w-5 h-5 text-emerald-600" />
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0">
+                        <DollarSign className="w-6 h-6 text-emerald-600" />
+                      </div>
                       <div>
-                        <p className="text-sm font-bold text-neutral-900">Dinheiro em Cédulas</p>
-                        <p className="text-xs text-neutral-500">Pagamento em espécie na entrega ou retirada</p>
+                        <p className="text-base font-black text-neutral-900">Dinheiro em Cédulas</p>
+                        <p className="text-sm text-neutral-500 font-medium">Pagamento em espécie na entrega ou retirada</p>
                       </div>
                     </div>
-                  </label>
+                  </div>
 
                   {paymentMethod === 'dinheiro' && (
-                    <div className="mt-3 pt-3 border-t border-neutral-200 flex items-center gap-3">
-                      <label className="text-xs font-bold text-neutral-700">Precisa de troco para quanto?</label>
+                    <div className="mt-4 pt-4 border-t border-neutral-200 flex flex-wrap items-center gap-3">
+                      <label className="text-sm font-bold text-neutral-800">Precisa de troco para quanto?</label>
                       <input
                         type="text"
                         value={trocoPara}
                         onChange={(e) => setTrocoPara(e.target.value)}
                         placeholder={`Ex: ${(Math.ceil(total / 10) * 10 + 10).toFixed(2)}`}
-                        className="w-32 text-xs p-2 border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900"
+                        className="w-40 text-base p-3 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 bg-white font-bold"
                       />
                     </div>
                   )}
@@ -612,83 +650,96 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
               )}
 
               {store.pagamentos?.whatsapp !== false && (
-                <label
+                <div
                   onClick={() => setPaymentMethod('whatsapp')}
-                  className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  className={`flex items-center justify-between p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all min-h-[64px] select-none ${
                     paymentMethod === 'whatsapp'
-                      ? 'border-neutral-900 bg-neutral-50 font-medium'
-                      : 'border-neutral-200'
+                      ? 'border-neutral-900 bg-neutral-50 shadow-sm'
+                      : 'border-neutral-200 bg-white hover:border-neutral-400'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <MessageCircle className="w-5 h-5 text-emerald-600" />
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0">
+                      <MessageCircle className="w-6 h-6 text-emerald-600" />
+                    </div>
                     <div>
-                      <p className="text-sm font-bold text-neutral-900">Combinar no WhatsApp</p>
-                      <p className="text-xs text-neutral-500">Combine a forma de pagamento diretamente no chat</p>
+                      <p className="text-base font-black text-neutral-900">Combinar no WhatsApp</p>
+                      <p className="text-sm text-neutral-500 font-medium">Combine diretamente com o atendente</p>
                     </div>
                   </div>
-                </label>
+                </div>
               )}
             </div>
           </div>
 
           {/* Seção 4: Resumo e Confirmação */}
-          <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-4">
-            <h2 className="text-base font-bold text-neutral-900">Resumo do Pedido</h2>
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200 shadow-sm space-y-5">
+            <h2 className="text-xl font-black text-neutral-900">Resumo do Pedido</h2>
 
-            <div className="space-y-2 text-sm text-neutral-600 border-b border-neutral-100 pb-3">
+            <div className="space-y-3 text-base text-neutral-700 border-b border-neutral-200 pb-4">
               <div className="flex justify-between">
-                <span>Subtotal ({items.length} itens)</span>
-                <span>{formatCurrency(subtotal)}</span>
+                <span>Subtotal ({items.length} {items.length === 1 ? 'item' : 'itens'})</span>
+                <span className="font-bold">{formatCurrency(subtotal)}</span>
               </div>
               {couponDiscount > 0 && (
-                <div className="flex justify-between text-emerald-600 font-medium">
-                  <span>Desconto ({appliedCoupon?.codigo})</span>
+                <div className="flex justify-between text-emerald-700 font-bold">
+                  <span>Desconto aplicado ({appliedCoupon?.codigo})</span>
                   <span>-{formatCurrency(couponDiscount)}</span>
                 </div>
               )}
               {orderType === 'entrega' && (
                 <div className="flex justify-between">
                   <span>Taxa de Entrega</span>
-                  <span>{selectedZone ? formatCurrency(deliveryFee) : 'Selecione o bairro'}</span>
+                  <span className="font-bold">{selectedZone ? formatCurrency(deliveryFee) : 'Selecione o bairro'}</span>
                 </div>
               )}
-              <div className="flex justify-between text-lg font-black text-neutral-900 pt-2 border-t border-neutral-200">
+              <div className="flex justify-between text-2xl font-black text-neutral-900 pt-3 border-t border-neutral-200">
                 <span>Total a pagar</span>
                 <span style={{ color: store.corPrimaria }}>{formatCurrency(total)}</span>
               </div>
             </div>
 
             {/* Aviso Informativo de Privacidade LGPD */}
-            <div className="p-3 bg-neutral-50 border border-neutral-200/70 rounded-xl text-xs text-neutral-600 space-y-1">
-              <p className="font-bold text-neutral-800 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                Uso de dados pessoais para entrega do pedido
+            <div className="p-4 bg-neutral-50 border border-neutral-200 rounded-2xl text-sm text-neutral-600 space-y-1">
+              <p className="font-black text-neutral-900 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                Proteção e privacidade dos seus dados
               </p>
-              <p className="text-[11px] leading-relaxed">
-                Seus dados (nome, telefone e endereço) são utilizados exclusivamente para o processamento, preparo e entrega deste pedido pelo estabelecimento, em conformidade com a LGPD. Consulte nossa{' '}
-                <a
-                  href="/#/privacidade"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-neutral-900 font-bold underline hover:text-emerald-700"
-                >
-                  Política de Privacidade
-                </a>.
+              <p className="text-sm leading-relaxed text-neutral-600">
+                Seus dados (nome, telefone e endereço) são transmitidos diretamente à loja para o preparo e entrega do pedido, em conformidade com a LGPD.
               </p>
             </div>
+
+            {/* Banner de Erro com Ação de Tentar Novamente */}
+            {submissionError && (
+              <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start gap-3 text-rose-950">
+                <AlertCircle className="w-6 h-6 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-black text-base text-rose-900">Não foi possível confirmar o pedido</p>
+                  <p className="text-sm mt-0.5 text-rose-800 leading-relaxed">{submissionError}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleSubmitOrder()}
+                    className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-sm font-black transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Tentar Novamente</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Botão Confirmar Pedido */}
             <button
               type="submit"
               disabled={isSubmitting || !openStatus.isOpen}
-              className="w-full py-4 px-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-transform active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+              className="w-full min-h-[58px] py-4 px-6 rounded-2xl text-white font-black text-lg shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-[0.99] disabled:opacity-50 cursor-pointer"
               style={{ backgroundColor: store.corPrimaria }}
             >
               {isSubmitting ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Registrando seu pedido...</span>
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span>Registrando pedido com segurança...</span>
                 </div>
               ) : (
                 <>

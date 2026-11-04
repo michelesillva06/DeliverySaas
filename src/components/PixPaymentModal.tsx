@@ -58,7 +58,6 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
   };
 
   const handleAlreadyPaid = async () => {
-    // 1. Atualizar status para 'informado' no Firestore com auditoria
     try {
       await updateOrderPaymentStatusInFirestore(
         order.id,
@@ -69,7 +68,6 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
       console.error('Erro ao atualizar status do Pix no Firestore:', err);
     }
 
-    // 2. Montar mensagem para o WhatsApp do lojista
     const msg = `Olá! Acabei de realizar o pagamento do Pedido #${order.numero} no valor de ${formatCurrency(
       order.total
     )} via Pix. Segue em anexo o meu comprovante para conferência!`;
@@ -77,7 +75,6 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
 
     if (onPaymentInformed) onPaymentInformed();
 
-    // 3. Abrir WhatsApp do lojista
     window.open(waUrl, '_blank');
   };
 
@@ -85,55 +82,55 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
   const isInformado = order.pagamento?.status === 'informado';
 
   return (
-    <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-sm space-y-5">
+    <div className="bg-white border border-neutral-200 rounded-3xl p-6 shadow-sm space-y-5 text-base">
       {/* Cabeçalho do Bloco Pix */}
-      <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700">
-            <QrCode className="w-6 h-6" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 flex-shrink-0">
+            <QrCode className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="font-bold text-base text-neutral-900 leading-tight">Pagamento via Pix</h3>
-            <p className="text-xs text-neutral-500">Pague sem taxas com aprovação rápida</p>
+            <h3 className="font-black text-lg text-neutral-900 leading-tight">Pagamento via Pix</h3>
+            <p className="text-sm text-neutral-600 font-medium">Aprovação imediata e sem tarifas</p>
           </div>
         </div>
 
         {/* Badge de Status do Pagamento */}
         {isConfirmed ? (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-100 text-emerald-900 rounded-full text-sm font-black">
+            <ShieldCheck className="w-5 h-5 text-emerald-700" />
             Pix Confirmado
           </span>
         ) : isInformado ? (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
-            <AlertCircle className="w-4 h-4 text-amber-600" />
+          <span className="flex items-center gap-2 px-3.5 py-1.5 bg-amber-100 text-amber-900 rounded-full text-sm font-black">
+            <AlertCircle className="w-5 h-5 text-amber-700" />
             Aguardando Conferência da Loja
           </span>
         ) : (
-          <span className="px-3 py-1 bg-neutral-100 text-neutral-700 rounded-full text-xs font-semibold">
+          <span className="px-3.5 py-1.5 bg-neutral-100 text-neutral-800 rounded-full text-sm font-bold">
             Aguardando Pagamento
           </span>
         )}
       </div>
 
       {isConfirmed ? (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
-          <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-            <Check className="w-6 h-6" />
+        <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-2">
+          <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto">
+            <Check className="w-8 h-8 stroke-[3]" />
           </div>
-          <h4 className="font-bold text-emerald-900 text-base">Pagamento Confirmado pela Loja!</h4>
-          <p className="text-xs text-emerald-700 max-w-sm mx-auto">
-            O lojista já conferiu o recebimento do seu Pix de {formatCurrency(order.total)}. Seu pedido está sendo
+          <h4 className="font-black text-emerald-950 text-xl">Pagamento Confirmado pela Loja!</h4>
+          <p className="text-base text-emerald-800 max-w-sm mx-auto">
+            O lojista confirmou o recebimento do seu Pix de {formatCurrency(order.total)}. Seu pedido já está sendo
             atendido!
           </p>
         </div>
       ) : (
         <>
           {/* Valor a Pagar */}
-          <div className="text-center py-2 bg-neutral-50 rounded-xl border border-neutral-100">
-            <p className="text-xs text-neutral-500 font-medium">Valor exato a transferir:</p>
-            <p className="text-2xl font-extrabold text-neutral-900 mt-0.5">{formatCurrency(order.total)}</p>
-            <p className="text-[11px] text-neutral-500 mt-1">
+          <div className="text-center py-4 bg-neutral-50 rounded-2xl border border-neutral-200">
+            <p className="text-sm text-neutral-600 font-bold uppercase tracking-wider">Valor exato do pedido:</p>
+            <p className="text-3xl font-black text-neutral-900 mt-1">{formatCurrency(order.total)}</p>
+            <p className="text-sm text-neutral-600 mt-1">
               Favorecido: <strong>{store.pixReceiverName || store.nome}</strong> • {store.pixCity || 'Brasil'}
             </p>
           </div>
@@ -141,22 +138,22 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
           {/* QR Code */}
           <div className="flex flex-col items-center justify-center py-2">
             {loading ? (
-              <div className="w-48 h-48 bg-neutral-100 rounded-xl flex items-center justify-center text-xs text-neutral-400 animate-pulse">
+              <div className="w-56 h-56 bg-neutral-100 rounded-2xl flex items-center justify-center text-sm font-bold text-neutral-400 animate-pulse">
                 Gerando QR Code...
               </div>
             ) : qrCodeUrl ? (
-              <div className="p-3 bg-white border-2 border-dashed border-neutral-200 rounded-2xl shadow-sm">
-                <img src={qrCodeUrl} alt="QR Code Pix" className="w-52 h-52 object-contain" />
+              <div className="p-4 bg-white border-2 border-dashed border-neutral-300 rounded-3xl shadow-sm">
+                <img src={qrCodeUrl} alt="QR Code Pix" className="w-56 h-56 object-contain" />
               </div>
             ) : null}
-            <p className="text-xs text-neutral-500 mt-2 text-center">
-              Abra o aplicativo do seu banco e aponte a câmera para ler o QR Code
+            <p className="text-sm text-neutral-600 mt-3 text-center font-medium max-w-sm">
+              Abra o aplicativo do seu banco, escolha a opção Pix e aponte a câmera para ler o QR Code
             </p>
           </div>
 
           {/* Código Copia e Cola */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider">
+            <label className="block text-sm font-black text-neutral-800 uppercase tracking-wide">
               Ou use o Pix Copia e Cola:
             </label>
             <div className="flex items-center gap-2">
@@ -164,21 +161,21 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
                 type="text"
                 readOnly
                 value={brCode}
-                className="flex-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl p-3 font-mono text-neutral-600 truncate focus:outline-none"
+                className="flex-1 text-sm bg-neutral-50 border border-neutral-300 rounded-2xl p-4 font-mono text-neutral-700 truncate focus:outline-none min-h-[48px]"
               />
               <button
                 type="button"
                 onClick={handleCopyCode}
-                className="px-4 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                className="px-5 py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl text-base font-bold flex items-center gap-2 transition-colors shadow-sm cursor-pointer min-h-[48px]"
               >
                 {copied ? (
                   <>
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-5 h-5 text-emerald-400 stroke-[3]" />
                     <span>Copiado!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4" />
+                    <Copy className="w-5 h-5" />
                     <span>Copiar</span>
                   </>
                 )}
@@ -191,13 +188,13 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
             <button
               type="button"
               onClick={handleAlreadyPaid}
-              className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full min-h-[54px] py-4 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base sm:text-lg rounded-2xl shadow-lg flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
             >
-              <MessageCircle className="w-4 h-4" />
+              <MessageCircle className="w-6 h-6" />
               <span>Já paguei! Enviar comprovante no WhatsApp</span>
             </button>
-            <p className="text-[11px] text-neutral-500 text-center leading-normal">
-              ⚠️ O pedido será liberado para preparo assim que o lojista verificar o comprovante no banco.
+            <p className="text-xs text-neutral-500 text-center leading-normal">
+              O pedido é liberado para preparo assim que o lojista verificar o comprovante ou a notificação bancária.
             </p>
           </div>
         </>

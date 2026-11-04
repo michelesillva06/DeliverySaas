@@ -21,6 +21,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, store }
     couponDiscount,
     applyCouponCode,
     removeCoupon,
+    serviceFee,
     total,
     totalItemsCount,
   } = useCart();
@@ -203,13 +204,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, store }
             {/* Totais */}
             <div className="space-y-2 text-base pt-1">
               <div className="flex justify-between text-neutral-600">
-                <span>Subtotal</span>
+                <span>Subtotal dos produtos</span>
                 <span className="font-semibold">{formatCurrency(subtotal)}</span>
               </div>
               {couponDiscount > 0 && (
                 <div className="flex justify-between text-emerald-700 font-bold">
                   <span>Desconto aplicado</span>
                   <span>-{formatCurrency(couponDiscount)}</span>
+                </div>
+              )}
+              {serviceFee > 0 && (
+                <div className="space-y-0.5">
+                  <div className="flex justify-between text-neutral-700 font-medium">
+                    <span>Taxa de serviço da plataforma</span>
+                    <span className="font-bold">{formatCurrency(serviceFee)}</span>
+                  </div>
+                  <p className="text-xs text-neutral-500 italic">
+                    Valor destinado ao uso e à manutenção da plataforma de pedidos.
+                  </p>
                 </div>
               )}
               <div className="flex justify-between text-xl font-black text-neutral-900 pt-2 border-t border-neutral-200">

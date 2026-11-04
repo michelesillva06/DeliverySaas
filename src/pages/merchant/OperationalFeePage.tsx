@@ -208,16 +208,20 @@ export const OperationalFeePage: React.FC = () => {
               <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
                   Meu Repasse Operacional
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-600 text-white shadow-xs">
+                  Implantação: R$ 0,00
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-600 text-white shadow-xs">
                   Mensalidade: R$ 0,00
                 </span>
               </div>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Você só paga a taxa por pedido efetivamente concluído e entregue.
+              <p className="text-xs text-neutral-500 mt-2">
+                A taxa de serviço de R$ 0,99 é adicionada ao total pago pelo consumidor. 
+                Quando o pagamento entra na conta ou no caixa da sua loja, esse valor deve ser repassado à plataforma conforme o ciclo combinado.
               </p>
             </div>
           </div>

@@ -31,17 +31,19 @@ import { gerarBrCode, gerarQrCodeDataUrl } from '../lib/pix';
 const CONFIG_DOC_PATH = 'operational_fee_config';
 const CONFIG_DOC_ID = 'default';
 
+export const DEFAULT_PLATFORM_SERVICE_FEE = 0.99;
+
 export const DEFAULT_MODALITY_RATES: Record<BillingModality, number> = {
-  diaria: 0.79,
-  semanal: 0.89,
+  diaria: 0.99,
+  semanal: 0.99,
   quinzenal: 0.99,
 };
 
 export const DEFAULT_FEE_CONFIG: OperationalFeeConfig = {
-  valorPadraoDiaria: 0.79,
-  valorPadraoSemanal: 0.89,
+  valorPadraoDiaria: 0.99,
+  valorPadraoSemanal: 0.99,
   valorPadraoQuinzenal: 0.99,
-  valorPadrao: 0.79,
+  valorPadrao: 0.99,
   ativoGlobal: true,
   periodoApuracao: 'diario',
   diasAposFechamentoVencimento: 3,
@@ -143,13 +145,15 @@ export async function getStoreBillingConfig(storeId: string): Promise<StoreBilli
       return snap.data() as StoreBillingConfig;
     }
 
-    // Criar configuração inicial padrão (Modalidade Diária R$ 0.79)
+    // Criar configuração inicial padrão (Modalidade Diária R$ 0.99, Implantação e Mensalidade R$ 0,00)
     const today = getManausDateString();
     const defaultConfig: StoreBillingConfig = {
       storeId,
       modalidade: 'diaria',
       taxaPorPedido: DEFAULT_MODALITY_RATES.diaria,
       taxaEmCentavos: Math.round(DEFAULT_MODALITY_RATES.diaria * 100),
+      implantacao: 0,
+      mensalidade: 0,
       dataInicioCobranca: today,
       diaFechamentoSemanal: 0,
       prazoPagamentoDias: 3,
@@ -168,7 +172,9 @@ export async function getStoreBillingConfig(storeId: string): Promise<StoreBilli
       storeId,
       modalidade: 'diaria',
       taxaPorPedido: DEFAULT_MODALITY_RATES.diaria,
-      taxaEmCentavos: 79,
+      taxaEmCentavos: 99,
+      implantacao: 0,
+      mensalidade: 0,
       dataInicioCobranca: today,
       prazoPagamentoDias: 3,
       valorMinimoFatura: 0,
@@ -341,14 +347,31 @@ export async function recordOrderOperationalFee(
     const entryRef = doc(db, 'operational_fee_entries', entryId);
     const existingSnap = await getDoc(entryRef);
 
+    const isPaymentConfirmed = order.pagamento?.status === 'confirmado';
+    const nowIso = getManausIsoString();
+
     if (existingSnap.exists()) {
-      return existingSnap.data() as OperationalFeeEntry;
+      const existingEntry = existingSnap.data() as OperationalFeeEntry;
+      // Se o pagamento do cliente foi confirmado agora e a taxa estava aguardando conferência, promove para 'pendente' (faturável)
+      if (isPaymentConfirmed && existingEntry.status === 'pendente_conferencia') {
+        await updateDoc(entryRef, {
+          status: 'pendente',
+          dataConfirmacaoPagamento: nowIso,
+        });
+        return { ...existingEntry, status: 'pendente', dataConfirmacaoPagamento: nowIso };
+      }
+      return existingEntry;
     }
 
-    // 4. Calcular taxa em centavos inteiros
-    const taxaUnit = storeBilling.taxaPorPedido ?? DEFAULT_MODALITY_RATES[storeBilling.modalidade || 'diaria'];
+    // 4. Calcular taxa em centavos inteiros (prioriza taxaServico do pedido se definido, senão taxa configurada, padrão 0.99)
+    const taxaUnit = typeof order.taxaServico === 'number' && order.taxaServico >= 0
+      ? order.taxaServico
+      : (storeBilling.taxaPorPedido ?? DEFAULT_PLATFORM_SERVICE_FEE);
     const taxaCentavos = Math.round(taxaUnit * 100);
-    const nowIso = getManausIsoString();
+
+    // Status da taxa: se o cliente já pagou (confirmado), está 'pendente' (apta para faturamento);
+    // se ainda não confirmou, fica em 'pendente_conferencia'
+    const feeStatus = isPaymentConfirmed ? 'pendente' : 'pendente_conferencia';
 
     const entry: OperationalFeeEntry = {
       id: entryId,
@@ -361,7 +384,8 @@ export async function recordOrderOperationalFee(
       taxaAplicada: taxaCentavos / 100,
       taxaEmCentavos: taxaCentavos,
       modalidadeAplicada: storeBilling.modalidade || 'diaria',
-      status: 'pendente',
+      status: feeStatus,
+      dataConfirmacaoPagamento: isPaymentConfirmed ? nowIso : undefined,
       criadoEm: nowIso,
     };
 
@@ -370,6 +394,32 @@ export async function recordOrderOperationalFee(
   } catch (err) {
     console.error('Erro ao contabilizar taxa operacional do pedido:', err);
     return null;
+  }
+}
+
+/**
+ * Promove uma taxa de 'pendente_conferencia' para 'pendente' assim que o pagamento do pedido é confirmado pelo lojista
+ */
+export async function confirmOrderOperationalFee(orderId: string): Promise<boolean> {
+  try {
+    const entryId = `fee_${orderId}`;
+    const entryRef = doc(db, 'operational_fee_entries', entryId);
+    const snap = await getDoc(entryRef);
+    if (!snap.exists()) return false;
+
+    const current = snap.data() as OperationalFeeEntry;
+    if (current.status === 'pendente_conferencia') {
+      const nowIso = getManausIsoString();
+      await updateDoc(entryRef, {
+        status: 'pendente',
+        dataConfirmacaoPagamento: nowIso,
+      });
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Erro ao promover taxa para confirmada:', err);
+    return false;
   }
 }
 

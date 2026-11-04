@@ -245,6 +245,12 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
         });
       }
     });
+    text += `\n*Subtotal:* ${formatCurrency(order.subtotal)}\n`;
+    if (order.desconto) text += `*Desconto:* -${formatCurrency(order.desconto)}\n`;
+    if (order.taxaEntrega) text += `*Taxa de Entrega:* ${formatCurrency(order.taxaEntrega)}\n`;
+    if (typeof order.taxaServico === 'number' && order.taxaServico > 0) {
+      text += `*Taxa de Serviço:* ${formatCurrency(order.taxaServico)} (Uso e manutenção da plataforma)\n`;
+    }
     text += `\n*TOTAL:* *${formatCurrency(order.total)}*\n`;
     text += `*Link de Acompanhamento:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
@@ -432,6 +438,17 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
               <div className="flex justify-between">
                 <span>Taxa de Entrega</span>
                 <span className="font-bold">{formatCurrency(order.taxaEntrega || 0)}</span>
+              </div>
+            )}
+            {typeof order.taxaServico === 'number' && order.taxaServico > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <div className="flex justify-between items-center text-neutral-800">
+                  <span className="font-medium">Taxa de serviço da plataforma</span>
+                  <span className="font-bold">{formatCurrency(order.taxaServico)}</span>
+                </div>
+                <span className="text-xs text-neutral-500">
+                  Valor destinado ao uso e à manutenção da plataforma de pedidos.
+                </span>
               </div>
             )}
             <div className="flex justify-between text-xl font-black text-neutral-900 pt-3 border-t border-neutral-200">

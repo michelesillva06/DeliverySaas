@@ -35,10 +35,14 @@ import {
   OrderStatus,
   PaymentStatus,
   SaasConfig,
-  StorePayment,
   SaasPaymentRequest,
 } from '../types';
-import { recordOrderOperationalFee, reverseOrderOperationalFee, recordAdminAuditLog } from './operationalFeeService';
+import {
+  recordOrderOperationalFee,
+  reverseOrderOperationalFee,
+  confirmOrderOperationalFee,
+  recordAdminAuditLog,
+} from './operationalFeeService';
 
 // ==========================================
 // ANONYMOUS AUTH HELPER FOR CUSTOMERS
@@ -713,15 +717,31 @@ export async function createOrderInFirestore(
     };
   });
 
-  // 7. Validar pedido mínimo da loja
+  // 7. Recalcular cupom de desconto oficial
+  let calculatedDiscount = 0;
+  let validatedCouponCode: string | null = null;
+  if (orderData.cupom) {
+    const couponValidation = await validateCouponInFirestore(
+      orderData.storeId,
+      orderData.cupom,
+      calculatedSubtotal
+    );
+    if (couponValidation.valid) {
+      calculatedDiscount = couponValidation.discount;
+      validatedCouponCode = couponValidation.coupon?.codigo || null;
+    }
+  }
+
+  // 8. Validar pedido mínimo da loja (considera valor dos produtos após descontos, sem entrega e sem taxa de serviço)
   const minStore = Math.max(0, Number(store.pedidoMinimo) || 0);
-  if (calculatedSubtotal < minStore) {
+  const valorProdutosComDesconto = Math.max(0, calculatedSubtotal - calculatedDiscount);
+  if (valorProdutosComDesconto < minStore) {
     throw new Error(
-      `O subtotal dos produtos (R$ ${calculatedSubtotal.toFixed(2)}) não atinge o pedido mínimo de R$ ${minStore.toFixed(2)}.`
+      `O valor dos produtos após descontos (R$ ${valorProdutosComDesconto.toFixed(2)}) não atinge o pedido mínimo de R$ ${minStore.toFixed(2)}.`
     );
   }
 
-  // 8. Recalcular taxa de entrega oficial
+  // 9. Recalcular taxa de entrega oficial
   let calculatedDeliveryFee = 0;
   if (orderData.tipo === 'entrega') {
     if (!orderData.endereco?.bairro) {
@@ -743,23 +763,14 @@ export async function createOrderInFirestore(
     }
   }
 
-  // 9. Recalcular cupom de desconto oficial
-  let calculatedDiscount = 0;
-  let validatedCouponCode: string | null = null;
-  if (orderData.cupom) {
-    const couponValidation = await validateCouponInFirestore(
-      orderData.storeId,
-      orderData.cupom,
-      calculatedSubtotal
-    );
-    if (couponValidation.valid) {
-      calculatedDiscount = couponValidation.discount;
-      validatedCouponCode = couponValidation.coupon?.codigo || null;
-    }
-  }
+  // 10. Recalcular taxa de serviço da plataforma (R$ 0,99 por pedido com itens; R$ 0 se sacola vazia)
+  const calculatedServiceFee = recalculatedItems.length > 0 ? 0.99 : 0;
 
-  // 10. Recalcular total oficial
-  const calculatedTotal = Math.max(0, calculatedSubtotal + calculatedDeliveryFee - calculatedDiscount);
+  // 11. Recalcular total oficial: Total = produtos − descontos + entrega + taxa de serviço
+  const calculatedTotal = Math.max(
+    0,
+    calculatedSubtotal - calculatedDiscount + calculatedDeliveryFee + calculatedServiceFee
+  );
 
   // 11. Validação de pagamento e troco
   if (orderData.pagamento.forma === 'dinheiro' && orderData.pagamento.troco) {
@@ -816,6 +827,7 @@ export async function createOrderInFirestore(
         numero: nextNum,
         subtotal: calculatedSubtotal,
         taxaEntrega: calculatedDeliveryFee,
+        taxaServico: calculatedServiceFee,
         desconto: calculatedDiscount,
         cupom: validatedCouponCode,
         total: calculatedTotal,
@@ -850,6 +862,7 @@ export async function createOrderInFirestore(
       numero: fallbackNumero,
       subtotal: calculatedSubtotal,
       taxaEntrega: calculatedDeliveryFee,
+      taxaServico: calculatedServiceFee,
       desconto: calculatedDiscount,
       cupom: validatedCouponCode,
       total: calculatedTotal,
@@ -981,6 +994,26 @@ export async function updateOrderPaymentStatusInFirestore(
       historicoStatus: historico,
     })
   );
+
+  // Se o pagamento do cliente foi confirmado, promover a taxa operacional para faturável ('pendente')
+  if (newPaymentStatus === 'confirmado') {
+    try {
+      const promoted = await confirmOrderOperationalFee(orderId);
+      if (!promoted && (order.status === 'entregue' || (order.tipo === 'retirada' && order.status === 'pronto'))) {
+        const storeRef = doc(db, 'stores', order.storeId);
+        const storeSnap = await getDoc(storeRef);
+        if (storeSnap.exists()) {
+          const storeData = storeSnap.data() as Store;
+          await recordOrderOperationalFee(
+            { ...order, pagamento: { ...order.pagamento, status: 'confirmado' } },
+            storeData
+          );
+        }
+      }
+    } catch (feeErr) {
+      console.warn('Aviso ao sincronizar taxa operacional após confirmação de pagamento:', feeErr);
+    }
+  }
 }
 
 export async function assignCourierInFirestore(orderId: string, courierId: string): Promise<void> {

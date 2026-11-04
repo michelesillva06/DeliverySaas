@@ -251,6 +251,7 @@ export interface Order {
   desconto: number;
   cupom?: string | null;
   taxaEntrega: number;
+  taxaServico?: number; // Taxa de serviço da plataforma (padrão R$ 0.99)
   total: number;
   pagamento: {
     forma: PaymentMethod;
@@ -358,9 +359,9 @@ export interface ScheduledConfigChange {
 
 export interface StoreBillingConfig {
   storeId: string;
-  modalidade: BillingModality; // 'diaria' | 'semanal' | 'quinzenal'
-  taxaPorPedido: number; // e.g., 0.79, 0.89, 0.99 or custom 0.85
-  taxaEmCentavos: number; // integer e.g., 79
+  modalidade: BillingModality; // 'diaria' | 'semanal' | 'quinzenal' (representa a frequência de repasse)
+  taxaPorPedido: number; // R$ 0.99 padrão por pedido
+  taxaEmCentavos: number; // 99 centavos padrão
   dataInicioCobranca: string; // YYYY-MM-DD
   diaFechamentoSemanal?: number; // 0 = Domingo, 1 = Segunda, ... 6 = Sábado
   prazoPagamentoDias: number; // grace period in days
@@ -368,6 +369,9 @@ export interface StoreBillingConfig {
   proximoFechamento?: string; // YYYY-MM-DD
   observacaoNegociacao?: string; // Visível apenas para o Master Admin
   alteracaoAgendada?: ScheduledConfigChange;
+  // Cobranças opcionais separadas (R$ 0,00 por padrão)
+  implantacao?: number;
+  mensalidade?: number;
   criadoEm?: string;
   atualizadoEm?: string;
 }
@@ -406,7 +410,13 @@ export interface OperationalFeeConfig {
   historicoAlteracoes: OperationalFeeChangeLog[];
 }
 
-export type OperationalFeeStatus = 'pendente' | 'em_cobranca' | 'pago' | 'estornado' | 'ajustado';
+export type OperationalFeeStatus =
+  | 'pendente' // Concluído e confirmado pago (devido para repasse)
+  | 'pendente_conferencia' // Concluído com pagamento ainda aguardando conferência
+  | 'em_cobranca' // Incluído em fatura aberta
+  | 'pago' // Repasse quitado
+  | 'estornado' // Cancelado
+  | 'ajustado';
 
 export interface OperationalFeeEntry {
   id: string; // fee_{orderId}

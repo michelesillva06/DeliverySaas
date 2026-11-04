@@ -88,6 +88,12 @@ export const ComandaConteudo: React.FC<ComandaProps> = ({ order, store }) => {
             <span>{formatCurrency(order.taxaEntrega)}</span>
           </div>
         )}
+        {typeof order.taxaServico === 'number' && order.taxaServico > 0 && (
+          <div className="flex justify-between">
+            <span>Taxa de Serviço:</span>
+            <span>{formatCurrency(order.taxaServico)}</span>
+          </div>
+        )}
         <div className="flex justify-between font-bold text-sm pt-1 border-t border-black">
           <span>TOTAL:</span>
           <span>{formatCurrency(order.total)}</span>

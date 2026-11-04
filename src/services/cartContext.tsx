@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { OrderItem, Coupon, DeliveryZone } from '../types';
 import { validateCouponInFirestore } from './firestoreService';
 
+export const PLATFORM_SERVICE_FEE = 0.99;
+
 interface CartContextType {
   items: OrderItem[];
   addItem: (item: Omit<OrderItem, 'id'>) => void;
@@ -18,6 +20,7 @@ interface CartContextType {
   setOrderType: (type: 'entrega' | 'retirada') => void;
   subtotal: number;
   deliveryFee: number;
+  serviceFee: number;
   total: number;
   totalItemsCount: number;
   storeSlug: string;
@@ -79,7 +82,8 @@ export const CartProvider: React.FC<{ storeId: string; storeSlug: string; childr
   }, [subtotal, appliedCoupon?.codigo, storeId]);
 
   const deliveryFee = orderType === 'entrega' ? (selectedZone ? selectedZone.taxa : 0) : 0;
-  const total = Math.max(0, subtotal - couponDiscount + deliveryFee);
+  const serviceFee = items.length > 0 ? PLATFORM_SERVICE_FEE : 0;
+  const total = Math.max(0, subtotal - couponDiscount + deliveryFee + serviceFee);
   const totalItemsCount = items.reduce((acc, it) => acc + it.qtd, 0);
 
   const addItem = (item: Omit<OrderItem, 'id'>) => {
@@ -154,6 +158,7 @@ export const CartProvider: React.FC<{ storeId: string; storeSlug: string; childr
         setOrderType,
         subtotal,
         deliveryFee,
+        serviceFee,
         total,
         totalItemsCount,
         storeSlug,

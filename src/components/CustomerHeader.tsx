@@ -129,6 +129,10 @@ export const CustomerHeader: React.FC<CustomerHeaderProps> = ({ store }) => {
               <span>Pedido mínimo {formatCurrency(store.pedidoMinimo || 25)}</span>
             </div>
 
+            <div className="flex items-center gap-2 bg-neutral-100 text-neutral-800 px-3 py-1.5 rounded-xl border border-neutral-300 font-medium text-sm sm:text-base">
+              <span>💳 Os pedidos incluem taxa de serviço de R$ 0,99</span>
+            </div>
+
             <button
               type="button"
               onClick={() => setHoursModalOpen(true)}

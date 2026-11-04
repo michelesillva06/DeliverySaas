@@ -291,7 +291,7 @@ export const OperationalFeeTab: React.FC<OperationalFeeTabProps> = ({ stores, au
           {/* Valor Padrão por Pedido */}
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1">
-              Valor Padrão por Pedido (R$) *
+              Taxa de Serviço da Plataforma (R$) *
             </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-xs font-bold text-neutral-400">R$</span>
@@ -305,7 +305,7 @@ export const OperationalFeeTab: React.FC<OperationalFeeTabProps> = ({ stores, au
                 required
               />
             </div>
-            <span className="text-[10px] text-neutral-400 mt-1 block">Padrão contratual: R$ 0,99</span>
+            <span className="text-[10px] text-neutral-400 mt-1 block">Valor cobrado do consumidor por pedido.</span>
           </div>
 
           {/* Periodicidade de Apuração */}

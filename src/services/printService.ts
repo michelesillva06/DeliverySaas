@@ -401,6 +401,12 @@ export function gerarHtmlEntrega(order: Order, store: Partial<Store>, largura: P
         <span class="negrito">${formatCurrency(order.taxaEntrega)}</span>
       </div>
     ` : ''}
+    ${typeof order.taxaServico === 'number' && order.taxaServico > 0 ? `
+      <div class="linha-flex">
+        <span>Taxa de Serviço:</span>
+        <span class="negrito">${formatCurrency(order.taxaServico)}</span>
+      </div>
+    ` : ''}
     ${order.desconto ? `
       <div class="linha-flex">
         <span>Desconto ${order.cupom ? `(${order.cupom})` : ''}:</span>

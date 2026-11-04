@@ -90,6 +90,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     selectedZone,
     setSelectedZone,
     deliveryFee,
+    serviceFee,
     total,
   } = useCart();
 
@@ -168,8 +169,9 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       return;
     }
 
-    if (subtotal < (store.pedidoMinimo || 0)) {
-      const msg = `O pedido mínimo deste estabelecimento é ${formatCurrency(store.pedidoMinimo)}.`;
+    const valorProdutosParaMinimo = Math.max(0, subtotal - couponDiscount);
+    if (valorProdutosParaMinimo < (store.pedidoMinimo || 0)) {
+      const msg = `O pedido mínimo em produtos deste estabelecimento é ${formatCurrency(store.pedidoMinimo)}. (Subtotal atual com desconto: ${formatCurrency(valorProdutosParaMinimo)})`;
       setSubmissionError(msg);
       return;
     }
@@ -251,6 +253,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         desconto: Number(couponDiscount) || 0,
         cupom: appliedCoupon?.codigo ?? null,
         taxaEntrega: Number(deliveryFee) || 0,
+        taxaServico: Number(serviceFee) || 0.99,
         total: Number(total) || 0,
         pagamento: {
           forma: cleanPaymentMethod,
@@ -296,6 +299,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       whatsMsg += `\n*Subtotal:* ${formatCurrency(order.subtotal)}\n`;
       if (order.desconto) whatsMsg += `*Desconto:* -${formatCurrency(order.desconto)}\n`;
       if (order.taxaEntrega) whatsMsg += `*Taxa de Entrega:* ${formatCurrency(order.taxaEntrega)}\n`;
+      whatsMsg += `*Taxa de Serviço:* ${formatCurrency(order.taxaServico || 0.99)} (Uso e manutenção da plataforma)\n`;
       whatsMsg += `*TOTAL A PAGAR:* *${formatCurrency(order.total)}*\n`;
       whatsMsg += `*Forma de Pagamento:* ${paymentLabel}${
         order.pagamento.troco ? ` (Troco para ${formatCurrency(order.pagamento.troco)})` : ''
@@ -689,6 +693,15 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                   <span className="font-bold">{selectedZone ? formatCurrency(deliveryFee) : 'Selecione o bairro'}</span>
                 </div>
               )}
+              <div className="flex flex-col gap-0.5">
+                <div className="flex justify-between items-center text-neutral-800">
+                  <span className="font-medium">Taxa de serviço da plataforma</span>
+                  <span className="font-bold">{formatCurrency(serviceFee)}</span>
+                </div>
+                <span className="text-xs text-neutral-500">
+                  Valor destinado ao uso e à manutenção da plataforma de pedidos.
+                </span>
+              </div>
               <div className="flex justify-between text-2xl font-black text-neutral-900 pt-3 border-t border-neutral-200">
                 <span>Total a pagar</span>
                 <span style={{ color: store.corPrimaria }}>{formatCurrency(total)}</span>

@@ -296,6 +296,119 @@ export const LandingHomePage: React.FC = () => {
           </div>
         </section>
 
+        {/* Modelo Comercial Transparente - R$ 0 de Mensalidade */}
+        <section className="py-16 sm:py-24 border-b border-neutral-800 relative bg-neutral-950">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 space-y-12 text-center">
+            <div className="space-y-3 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Zero Risco para seu Estabelecimento</span>
+              </div>
+              <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+                R$ 0 de Mensalidade • Pague Apenas Por Pedido Concluído
+              </h2>
+              <p className="text-sm text-neutral-400 leading-relaxed">
+                Sem assinaturas fixas, sem fidelidade e sem custos ocultos. Se a sua loja não vendeu, você não paga nada.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+              {/* Modalidade Diária */}
+              <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 hover:border-emerald-500/40 transition-all space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="inline-block px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">
+                    Mais Econômica
+                  </div>
+                  <h3 className="text-xl font-black text-white">Modalidade Diária</h3>
+                  <div className="text-3xl font-black text-emerald-400">
+                    R$ 0,79 <span className="text-xs font-normal text-neutral-400">/ pedido concluído</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Apuração e fechamento diário do repasse às 23:59 (fuso America/Manaus). Ideal para operações com fluxo contínuo.
+                  </p>
+                </div>
+
+                <ul className="space-y-2 text-xs text-neutral-300 pt-3 border-t border-neutral-800">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span>Fechamento ao final de cada dia</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span>R$ 0,00 de mensalidade fixa</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span>Pagamento via Pix Copia e Cola</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Modalidade Semanal */}
+              <div className="p-6 rounded-3xl bg-neutral-900 border-2 border-rose-600/60 shadow-xl shadow-rose-950/20 space-y-4 flex flex-col justify-between relative">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-rose-600 text-white rounded-full text-[10px] font-black uppercase tracking-wider">
+                  Mais Popular
+                </div>
+                <div className="space-y-3">
+                  <h3 className="text-xl font-black text-white pt-1">Modalidade Semanal</h3>
+                  <div className="text-3xl font-black text-rose-400">
+                    R$ 0,89 <span className="text-xs font-normal text-neutral-400">/ pedido concluído</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Apuração a cada 7 dias corridos. Excelente para manter a gestão financeira semanal organizada.
+                  </p>
+                </div>
+
+                <ul className="space-y-2 text-xs text-neutral-300 pt-3 border-t border-neutral-800">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span>Ciclos de 7 dias configuráveis</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span>Prazo para acerto via Pix</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span>Acúmulo automático de faturas baixas</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Modalidade Quinzenal */}
+              <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 hover:border-indigo-500/40 transition-all space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="inline-block px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-xs font-bold border border-indigo-500/20">
+                    Maior Comodidade
+                  </div>
+                  <h3 className="text-xl font-black text-white">Modalidade Quinzenal</h3>
+                  <div className="text-3xl font-black text-indigo-400">
+                    R$ 0,99 <span className="text-xs font-normal text-neutral-400">/ pedido concluído</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Apenas 2 fechamentos no mês: do dia 1º ao dia 15, e do dia 16 ao último dia do mês.
+                  </p>
+                </div>
+
+                <ul className="space-y-2 text-xs text-neutral-300 pt-3 border-t border-neutral-800">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <span>2 acertos no mês calendarizado</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <span>Extrato detalhado pedido a pedido</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <span>Isenção completa para testes</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Demonstração do Cardápio Público */}
         <section className="py-16 sm:py-24 border-b border-neutral-800 relative">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8 text-center">

@@ -343,9 +343,34 @@ export interface SubscriptionPaymentRequest {
 export type SaasPaymentRequest = SubscriptionPaymentRequest;
 
 // ==========================================
-// MÓDULO DE TAXA OPERACIONAL POR PEDIDO
+// MÓDULO DE TAXA OPERACIONAL POR PEDIDO (REPASSE)
 // ==========================================
-export type OperationalBillingPeriod = 'diario' | 'semanal' | 'mensal';
+export type BillingModality = 'diaria' | 'semanal' | 'quinzenal';
+export type OperationalBillingPeriod = 'diario' | 'semanal' | 'mensal'; // legacy compatibility
+
+export interface ScheduledConfigChange {
+  modalidade: BillingModality;
+  taxaPorPedido: number; // in BRL
+  dataVigencia: string; // YYYY-MM-DD (start of next cycle)
+  agendadoPor: string;
+  agendadoEm: string;
+}
+
+export interface StoreBillingConfig {
+  storeId: string;
+  modalidade: BillingModality; // 'diaria' | 'semanal' | 'quinzenal'
+  taxaPorPedido: number; // e.g., 0.79, 0.89, 0.99 or custom 0.85
+  taxaEmCentavos: number; // integer e.g., 79
+  dataInicioCobranca: string; // YYYY-MM-DD
+  diaFechamentoSemanal?: number; // 0 = Domingo, 1 = Segunda, ... 6 = Sábado
+  prazoPagamentoDias: number; // grace period in days
+  valorMinimoFatura: number; // 0 = sem limite
+  proximoFechamento?: string; // YYYY-MM-DD
+  observacaoNegociacao?: string; // Visível apenas para o Master Admin
+  alteracaoAgendada?: ScheduledConfigChange;
+  criadoEm?: string;
+  atualizadoEm?: string;
+}
 
 export interface OperationalFeeChangeLog {
   id: string;
@@ -357,15 +382,22 @@ export interface OperationalFeeChangeLog {
 
 export interface StoreFeeOverride {
   ativo: boolean;
-  valorUnitario?: number; // Override individual (ex: 0.99)
+  modalidade?: BillingModality;
+  valorUnitario?: number; // Override individual (ex: 0.85)
   dataInicio?: string; // YYYY-MM-DD
   isencaoAte?: string; // YYYY-MM-DD
+  prazoPagamentoDias?: number;
+  valorMinimoFatura?: number;
+  observacaoNegociacao?: string;
 }
 
 export interface OperationalFeeConfig {
-  valorPadrao: number; // Padrão: 0.99
+  valorPadraoDiaria: number; // 0.79
+  valorPadraoSemanal: number; // 0.89
+  valorPadraoQuinzenal: number; // 0.99
+  valorPadrao: number; // Fallback ex 0.79
   ativoGlobal: boolean; // default: true
-  periodoApuracao: OperationalBillingPeriod; // 'diario' | 'semanal' | 'mensal'
+  periodoApuracao: OperationalBillingPeriod; // legacy fallback
   diasAposFechamentoVencimento: number; // ex: 3 ou 5 dias para vencer
   dataInicioCobranca: string; // ISO date - pedidos anteriores não são cobrados
   lojasConfig: {
@@ -384,30 +416,71 @@ export interface OperationalFeeEntry {
   storeNome: string;
   dataConclusao: string; // ISO string
   valorPedido: number; // Apenas para referência
-  taxaAplicada: number; // Ex: 0.99
+  taxaAplicada: number; // Ex: 0.79 em R$
+  taxaEmCentavos: number; // Ex: 79 centavos
+  modalidadeAplicada: BillingModality;
   status: OperationalFeeStatus;
+  cicloOrigemId?: string;
   cobrancaId?: string; // ID da fatura vinculada
   estornadoEm?: string;
   motivoEstorno?: string;
   criadoEm: string; // ISO string
 }
 
-export type OperationalInvoiceStatus = 'aberta' | 'aguardando_confirmacao' | 'paga' | 'vencida' | 'cancelada';
+export type OperationalBillingCycleStatus = 'aberto' | 'encerrado' | 'faturado' | 'transportado';
+
+export interface OperationalBillingCycle {
+  id: string; // cycle_{storeId}_{YYYY-MM-DD}
+  storeId: string;
+  storeNome: string;
+  modalidade: BillingModality;
+  dataInicio: string; // YYYY-MM-DD
+  dataFim: string; // YYYY-MM-DD
+  status: OperationalBillingCycleStatus;
+  pedidosConcluidos: number;
+  valorBrutoEmCentavos: number;
+  valorBruto: number;
+  faturaId?: string;
+  transportadoParaCicloId?: string;
+  criadoEm: string;
+  encerradoEm?: string;
+}
+
+export type OperationalInvoiceStatus =
+  | 'em_aberto'
+  | 'aguardando_confirmacao'
+  | 'parcialmente_paga'
+  | 'paga'
+  | 'vencida'
+  | 'cancelada';
+
+export interface CarriedOverBalance {
+  cicloId: string;
+  periodo: string; // Ex: "01/11/2026 - 15/11/2026"
+  valor: number;
+}
 
 export interface OperationalInvoice {
   id: string; // inv_{storeId}_{timestamp}
   storeId: string;
   storeNome: string;
+  modalidade: BillingModality;
   periodoInicio: string; // YYYY-MM-DD
   periodoFim: string; // YYYY-MM-DD
-  periodoTipo: OperationalBillingPeriod;
   quantidadePedidos: number;
-  taxaMedia: number;
-  valorTotal: number;
+  taxaAplicada: number;
+  valorBruto: number;
+  saldosTransportadosOrigem: CarriedOverBalance[];
+  creditosUtilizados: number;
+  valorTotalAPagar: number;
+  valorPago: number;
+  saldoPendente: number;
+  dataEmissao: string; // YYYY-MM-DD
   vencimento: string; // YYYY-MM-DD
   status: OperationalInvoiceStatus;
   pedidosIds: string[];
   lancamentosIds: string[];
+  ciclosIds?: string[];
   // Pagamento Pix
   pixChave?: string;
   pixTipoChave?: string;
@@ -422,6 +495,36 @@ export interface OperationalInvoice {
   confirmadoPor?: string;
   confirmadoEm?: string;
   geradoEm: string;
+}
+
+export interface OperationalPaymentRecord {
+  id: string;
+  faturaId: string;
+  storeId: string;
+  valor: number;
+  dataPagamento: string; // YYYY-MM-DD ou ISO
+  registradoPor: string;
+  comprovanteUrl?: string;
+  observacao?: string;
+  creditoGerado?: number;
+  criadoEm: string;
+}
+
+export interface OperationalAdjustment {
+  id: string;
+  storeId: string;
+  tipo: 'credito' | 'debito';
+  valor: number;
+  justificativa: string;
+  autorEmail: string;
+  faturaIdId?: string;
+  criadoEm: string;
+}
+
+export interface StoreCreditBalance {
+  storeId: string;
+  saldoCredito: number; // Em R$
+  atualizadoEm: string;
 }
 
 // ==========================================
@@ -446,11 +549,14 @@ export interface StorefrontAccessLog {
 export type AuditActionType =
   | 'alterar_taxa_global'
   | 'alterar_taxa_loja'
+  | 'agendar_alteracao_loja'
   | 'suspender_loja'
   | 'ativar_loja'
   | 'confirmar_fatura'
+  | 'registrar_pagamento_parcial'
   | 'fechar_periodo_fatura'
   | 'ajuste_saldo'
+  | 'ajuste_manual_credito_debito'
   | 'editar_loja'
   | 'login_como_loja';
 

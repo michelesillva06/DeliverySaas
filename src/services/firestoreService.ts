@@ -75,6 +75,185 @@ export async function getStoreFromFirestore(storeId: string): Promise<Store | nu
   }
 }
 
+export async function seedDemoStoreInFirestore(slug = 'bora-de-acai'): Promise<Store> {
+  const storeId = 'store_bora_de_acai_demo';
+  const demoStore: Store = {
+    id: storeId,
+    nome: 'Bora de Açaí',
+    slug: 'bora-de-acai',
+    customSlug: 'restaurante-demonstracao',
+    descricao: 'O melhor açaí da cidade com adicionais ilimitados e entrega rápida! (Loja de Demonstração)',
+    whatsapp: '5592999998888',
+    status: 'ativa',
+    aberta: true,
+    aceitaEntrega: true,
+    aceitaRetirada: true,
+    corPrimaria: '#7e22ce',
+    pedidoMinimo: 15.0,
+    tempoEstimadoMin: 30,
+    tempoEstimadoRetiradaMin: 15,
+    endereco: 'Av. Djalma Batista, 1200 - Chapada, Manaus - AM',
+    logo: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?auto=format&fit=crop&w=300&q=80',
+    capa: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?auto=format&fit=crop&w=1200&q=80',
+    ownerUid: 'demo_owner_uid',
+    nomeResponsavel: 'Bora de Açaí',
+    emailResponsavel: 'demo@boradeacai.com',
+    plano: 'Ilimitado',
+    valorImplantacao: 0,
+    valorMensalidade: 0,
+    diaVencimento: 30,
+    dataVencimento: '2030-12-31T23:59:59.000Z',
+    pagamentos: {
+      pix: true,
+      cartaoEntrega: true,
+      dinheiro: true,
+      whatsapp: true,
+    },
+    pixKeyType: 'telefone',
+    pixKey: '92999998888',
+    pixReceiverName: 'Bora de Açaí Ltda',
+    pixCity: 'MANAUS',
+    criadoEm: new Date().toISOString(),
+    viasImpressao: 'ambas',
+    imprimirAutoAoAceitar: false,
+    soundPreference: 'bell',
+    horarios: [],
+    nextOrderNumber: 1001,
+    mensagensWhatsapp: {
+      aceito: 'Olá {nome}! Seu pedido #{numero} foi aceito.',
+      preparo: 'Olá {nome}! Seu pedido #{numero} está em preparo.',
+      saiuEntrega: 'Olá {nome}! Seu pedido #{numero} saiu para entrega!',
+      prontoRetirada: 'Olá {nome}! Seu pedido #{numero} está pronto para retirada!',
+      cancelado: 'Olá {nome}. Seu pedido #{numero} foi cancelado.',
+    },
+  };
+
+  try {
+    // 1. Salvar Loja
+    await setDoc(doc(db, 'stores', storeId), limparObjeto(demoStore));
+
+    // 2. Salvar Categorias
+    const categories: Category[] = [
+      { id: 'cat_acai_copos', storeId, nome: 'Copos de Açaí', ordem: 1, ativa: true },
+      { id: 'cat_acai_felicidade', storeId, nome: 'Copo da Felicidade', ordem: 2, ativa: true },
+      { id: 'cat_acai_bebidas', storeId, nome: 'Sucos e Bebidas', ordem: 3, ativa: true },
+    ];
+    for (const cat of categories) {
+      await setDoc(doc(db, 'categories', cat.id), limparObjeto(cat));
+    }
+
+    // 3. Salvar Grupos de Adicionais
+    const optionGroups: OptionGroup[] = [
+      {
+        id: 'opt_tamanho',
+        storeId,
+        nome: 'Acompanhamentos Grátis',
+        obrigatorio: true,
+        min: 1,
+        max: 2,
+        opcoes: [
+          { id: 'opt_1', nome: 'Leite em Pó Ninho', preco: 0 },
+          { id: 'opt_2', nome: 'Leite Condensado Nestlé', preco: 0 },
+          { id: 'opt_3', nome: 'Paçoca Crocante', preco: 0 },
+        ],
+      },
+      {
+        id: 'opt_coberturas',
+        storeId,
+        nome: 'Adicionais Especiais (Opcional)',
+        obrigatorio: false,
+        min: 0,
+        max: 4,
+        opcoes: [
+          { id: 'opt_c1', nome: 'Nutella Pura (50g)', preco: 5.0 },
+          { id: 'opt_c2', nome: 'Morango Fresco Fatiado', preco: 4.0 },
+          { id: 'opt_c3', nome: 'Banana Prata Fatiada', preco: 3.0 },
+          { id: 'opt_c4', nome: 'Granola Crocante', preco: 2.5 },
+        ],
+      },
+    ];
+    for (const og of optionGroups) {
+      await setDoc(doc(db, 'optionGroups', og.id), limparObjeto(og));
+    }
+
+    // 4. Salvar Produtos
+    const products: Product[] = [
+      {
+        id: 'prod_acai_300',
+        storeId,
+        categoriaId: 'cat_acai_copos',
+        nome: 'Açaí Tradicional 300ml',
+        descricao: 'Açaí puro batido cremoso de altíssima qualidade. Acompanha até 2 itens grátis.',
+        preco: 16.0,
+        disponivel: true,
+        ativo: true,
+        ordem: 1,
+        optionGroupIds: ['opt_tamanho', 'opt_coberturas'],
+        imagem: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_acai_500',
+        storeId,
+        categoriaId: 'cat_acai_copos',
+        nome: 'Açaí Tradicional 500ml',
+        descricao: 'O mais pedido! Açaí cremoso de altíssima pureza com sabor inigualável.',
+        preco: 22.0,
+        precoPromocional: 19.9,
+        disponivel: true,
+        ativo: true,
+        ordem: 2,
+        optionGroupIds: ['opt_tamanho', 'opt_coberturas'],
+        imagem: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_felicidade_700',
+        storeId,
+        categoriaId: 'cat_acai_felicidade',
+        nome: 'Copo da Felicidade 700ml',
+        descricao: 'Camadas fartas de açaí, Nutella pura, morango fresco, leite condensado e M&Ms.',
+        preco: 32.0,
+        disponivel: true,
+        ativo: true,
+        ordem: 3,
+        optionGroupIds: ['opt_coberturas'],
+        imagem: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_suco_300',
+        storeId,
+        categoriaId: 'cat_acai_bebidas',
+        nome: 'Suco Natural de Laranja 500ml',
+        descricao: 'Suco da fruta espremido na hora, 100% natural e sem açúcar.',
+        preco: 9.0,
+        disponivel: true,
+        ativo: true,
+        ordem: 4,
+        optionGroupIds: [],
+        imagem: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80',
+      },
+    ];
+    for (const prod of products) {
+      await setDoc(doc(db, 'products', prod.id), limparObjeto(prod));
+    }
+
+    // 5. Salvar Bairros de Entrega
+    const zones: DeliveryZone[] = [
+      { id: 'zone_demo_1', storeId, bairro: 'Centro', taxa: 5.0, ativo: true },
+      { id: 'zone_demo_2', storeId, bairro: 'Chapada', taxa: 6.0, ativo: true },
+      { id: 'zone_demo_3', storeId, bairro: 'Adrianópolis', taxa: 8.0, ativo: true },
+      { id: 'zone_demo_4', storeId, bairro: 'Flores', taxa: 7.0, ativo: true },
+    ];
+    for (const zone of zones) {
+      await setDoc(doc(db, 'deliveryZones', zone.id), limparObjeto(zone));
+    }
+
+    return demoStore;
+  } catch (err) {
+    console.error('Erro ao semear loja de demonstração no Firestore:', err);
+    return demoStore;
+  }
+}
+
 export async function getStoreBySlugFromFirestore(slug: string): Promise<Store | null> {
   try {
     const cleanSlug = slug.toLowerCase().trim();
@@ -92,6 +271,12 @@ export async function getStoreBySlugFromFirestore(slug: string): Promise<Store |
       return snapCustom.docs[0].data() as Store;
     }
     
+    // 3. Se for a loja de demonstração e não for encontrada no banco, criar automaticamente
+    if (cleanSlug === 'bora-de-acai' || cleanSlug === 'restaurante-demonstracao') {
+      const seeded = await seedDemoStoreInFirestore(cleanSlug);
+      return seeded;
+    }
+
     return null;
   } catch (error) {
     console.error('Erro ao buscar loja por slug no Firestore:', error);
@@ -146,14 +331,25 @@ export function subscribeToStore(storeId: string, callback: (store: Store | null
 }
 
 export function subscribeToStoreBySlug(slug: string, callback: (store: Store | null) => void): Unsubscribe {
-  const q = query(collection(db, 'stores'), where('slug', '==', slug.toLowerCase()));
+  const cleanSlug = slug.toLowerCase().trim();
+  const q = query(collection(db, 'stores'), where('slug', '==', cleanSlug));
   return onSnapshot(
     q,
-    (snap) => {
+    async (snap) => {
       if (!snap.empty) {
         callback(snap.docs[0].data() as Store);
       } else {
-        callback(null);
+        // Tentar buscar por customSlug
+        const qCustom = query(collection(db, 'stores'), where('customSlug', '==', cleanSlug));
+        const snapCustom = await getDocs(qCustom);
+        if (!snapCustom.empty) {
+          callback(snapCustom.docs[0].data() as Store);
+        } else if (cleanSlug === 'bora-de-acai' || cleanSlug === 'restaurante-demonstracao') {
+          const seeded = await seedDemoStoreInFirestore(cleanSlug);
+          callback(seeded);
+        } else {
+          callback(null);
+        }
       }
     },
     (err) => {

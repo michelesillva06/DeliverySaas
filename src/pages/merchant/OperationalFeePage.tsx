@@ -16,14 +16,26 @@ import {
   FileText,
   ShieldCheck,
   Info,
-  ExternalLink,
+  BadgePercent,
+  Wallet,
+  Sparkles,
 } from 'lucide-react';
-import { Store, OperationalFeeEntry, OperationalInvoice, OperationalFeeConfig } from '../../types';
+import {
+  Store,
+  OperationalFeeEntry,
+  OperationalInvoice,
+  OperationalFeeConfig,
+  StoreBillingConfig,
+  BillingModality,
+} from '../../types';
 import {
   subscribeToOperationalFeeEntriesByStore,
   subscribeToInvoicesByStore,
   subscribeToOperationalFeeConfig,
+  subscribeToStoreBillingConfig,
+  subscribeToStoreCreditBalance,
   submitInvoicePaymentProof,
+  DEFAULT_MODALITY_RATES,
 } from '../../services/operationalFeeService';
 import { formatCurrency, formatDateTime } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
@@ -35,6 +47,9 @@ export const OperationalFeePage: React.FC = () => {
   const [entries, setEntries] = useState<OperationalFeeEntry[]>([]);
   const [invoices, setInvoices] = useState<OperationalInvoice[]>([]);
   const [config, setConfig] = useState<OperationalFeeConfig | null>(null);
+  const [billingConfig, setBillingConfig] = useState<StoreBillingConfig | null>(null);
+  const [storeCredit, setStoreCredit] = useState<number>(0);
+
   const [selectedInvoice, setSelectedInvoice] = useState<OperationalInvoice | null>(null);
   const [proofText, setProofText] = useState('');
   const [isSubmittingProof, setIsSubmittingProof] = useState(false);
@@ -61,42 +76,66 @@ export const OperationalFeePage: React.FC = () => {
       setConfig(cfg);
     });
 
+    const unsubBilling = subscribeToStoreBillingConfig(store.id, (bCfg) => {
+      setBillingConfig(bCfg);
+    });
+
+    const unsubCredit = subscribeToStoreCreditBalance(store.id, (cred) => {
+      setStoreCredit(cred);
+    });
+
     return () => {
       unsubEntries();
       unsubInvoices();
       unsubConfig();
+      unsubBilling();
+      unsubCredit();
     };
   }, [store?.id]);
 
-  // Taxa unitária para esta loja
-  const taxaUnit = useMemo(() => {
-    if (!config) return 0.99;
-    const storeOverride = config.lojasConfig?.[store.id];
-    if (typeof storeOverride?.valorUnitario === 'number') {
-      return storeOverride.valorUnitario;
-    }
-    return config.valorPadrao ?? 0.99;
-  }, [config, store.id]);
+  // Modalidade e Taxa efetiva contratada
+  const activeModality: BillingModality = billingConfig?.modalidade || 'diaria';
+  const taxaUnit = billingConfig?.taxaPorPedido ?? DEFAULT_MODALITY_RATES[activeModality];
+  const prazoPagamento = billingConfig?.prazoPagamentoDias ?? 3;
+  const valorMinimoFatura = billingConfig?.valorMinimoFatura ?? 0;
 
-  // Cálculos do período
+  // Rótulo da modalidade
+  const modalityLabel = useMemo(() => {
+    switch (activeModality) {
+      case 'diaria':
+        return 'Diária (Fechamento todos os dias às 23:59)';
+      case 'semanal':
+        return 'Semanal (Apuração de 7 dias)';
+      case 'quinzenal':
+        return 'Quinzenal (1º a 15 e 16 até fim do mês)';
+      default:
+        return 'Diária';
+    }
+  }, [activeModality]);
+
+  // Cálculos das Métricas
   const metrics = useMemo(() => {
     const validos = entries.filter((e) => e.status !== 'estornado');
-    const pendentes = entries.filter((e) => e.status === 'pendente' || e.status === 'em_cobranca');
+    const pendentes = entries.filter((e) => e.status === 'pendente');
+    const emCobranca = entries.filter((e) => e.status === 'em_cobranca');
     const pagos = entries.filter((e) => e.status === 'pago');
 
-    const totalAcumulado = validos.reduce((sum, e) => sum + e.taxaAplicada, 0);
-    const totalPago = pagos.reduce((sum, e) => sum + e.taxaAplicada, 0);
-    const saldoPendente = pendentes.reduce((sum, e) => sum + e.taxaAplicada, 0);
+    const totalAcumuladoHistorico = validos.reduce((sum, e) => sum + e.taxaAplicada, 0);
+    const totalPagoHistorico = pagos.reduce((sum, e) => sum + e.taxaAplicada, 0);
+    const saldoNaoFaturadoAtual = pendentes.reduce((sum, e) => sum + e.taxaAplicada, 0);
 
-    // Próxima fatura em aberto
-    const openInvoice = invoices.find((inv) => inv.status === 'aberta' || inv.status === 'vencida');
+    // Fatura em aberto ou vencida
+    const openInvoice = invoices.find((inv) => inv.status === 'em_aberto' || inv.status === 'vencida');
+    const pendingInvoices = invoices.filter((inv) => inv.status !== 'paga' && inv.status !== 'cancelada');
 
     return {
       quantidadeValidos: validos.length,
-      totalAcumulado,
-      totalPago,
-      saldoPendente,
+      pedidosPendentesCount: pendentes.length,
+      totalAcumuladoHistorico,
+      totalPagoHistorico,
+      saldoNaoFaturadoAtual,
       openInvoice,
+      pendingInvoices,
     };
   }, [entries, invoices]);
 
@@ -165,16 +204,23 @@ export const OperationalFeePage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 pb-5">
         <div>
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
               <Receipt className="w-5 h-5" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-              Meu Repasse Operacional
-            </h1>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
+                  Meu Repasse Operacional
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-600 text-white shadow-xs">
+                  Mensalidade: R$ 0,00
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Você só paga a taxa por pedido efetivamente concluído e entregue.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Controle transparente das taxas operacionais por pedidos concluídos da sua loja.
-          </p>
         </div>
 
         {/* Status de Vencimento e Botão Pagar */}
@@ -184,89 +230,125 @@ export const OperationalFeePage: React.FC = () => {
             className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer animate-bounce"
           >
             <QrCode className="w-4 h-4" />
-            <span>Pagar Fatura Aberta ({formatCurrency(metrics.openInvoice.valorTotal)})</span>
+            <span>Pagar Fatura Aberta ({formatCurrency(metrics.openInvoice.valorTotalAPagar)})</span>
           </button>
         )}
       </div>
 
-      {/* Cards de Resumo Financeiro */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        {/* Card 1: Pedidos Válidos */}
-        <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
-          <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-            Pedidos Válidos
-          </span>
-          <div className="text-2xl sm:text-3xl font-black text-neutral-900 mt-1">
-            {metrics.quantidadeValidos}
+      {/* Card de Condições Contratadas */}
+      <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 text-white p-5 sm:p-6 rounded-3xl shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-700/60 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-2xl border border-emerald-500/30">
+              <BadgePercent className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+                Plano de Repasse Contratado
+              </span>
+              <h2 className="text-lg font-black text-white">
+                Modalidade {activeModality.toUpperCase()} — {formatCurrency(taxaUnit)} / pedido concluído
+              </h2>
+            </div>
           </div>
-          <span className="text-[11px] text-neutral-500 mt-1 block">concluídos com sucesso</span>
+
+          {storeCredit > 0 && (
+            <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 rounded-xl text-emerald-300 text-xs font-bold">
+              <Wallet className="w-4 h-4" />
+              <span>Crédito Disponível: {formatCurrency(storeCredit)}</span>
+            </div>
+          )}
         </div>
 
-        {/* Card 2: Taxa Unitária */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+          <div className="bg-neutral-800/60 p-3 rounded-2xl border border-neutral-700/50">
+            <span className="text-neutral-400 block text-[11px]">Modalidade</span>
+            <span className="font-bold text-white capitalize">{activeModality}</span>
+          </div>
+          <div className="bg-neutral-800/60 p-3 rounded-2xl border border-neutral-700/50">
+            <span className="text-neutral-400 block text-[11px]">Taxa Negociada</span>
+            <span className="font-bold text-emerald-400">{formatCurrency(taxaUnit)} / pedido</span>
+          </div>
+          <div className="bg-neutral-800/60 p-3 rounded-2xl border border-neutral-700/50">
+            <span className="text-neutral-400 block text-[11px]">Prazo de Pagamento</span>
+            <span className="font-bold text-white">
+              {prazoPagamento === 0 ? 'No dia do fechamento' : `${prazoPagamento} dias após fechamento`}
+            </span>
+          </div>
+          <div className="bg-neutral-800/60 p-3 rounded-2xl border border-neutral-700/50">
+            <span className="text-neutral-400 block text-[11px]">Valor Mínimo Fatura</span>
+            <span className="font-bold text-white">
+              {valorMinimoFatura === 0 ? 'Sem limite mínimo' : formatCurrency(valorMinimoFatura)}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-neutral-400 italic">
+          * {modalityLabel}. Condições financeiras gerenciadas pela administração Master da plataforma.
+        </p>
+      </div>
+
+      {/* Cards de Métricas Rápidas */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
           <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-            Taxa por Pedido
+            Pedidos no Ciclo Atual
+          </span>
+          <div className="text-2xl sm:text-3xl font-black text-neutral-900 mt-1">
+            {metrics.pedidosPendentesCount}
+          </div>
+          <span className="text-[11px] text-neutral-500 mt-1 block">concluídos a faturar</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
+          <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+            Saldo Atual Não Faturado
           </span>
           <div className="text-2xl sm:text-3xl font-black text-indigo-600 mt-1">
-            {formatCurrency(taxaUnit)}
+            {formatCurrency(metrics.saldoNaoFaturadoAtual)}
           </div>
-          <span className="text-[11px] text-neutral-500 mt-1 block">
-            apuração {config?.periodoApuracao || 'mensal'}
-          </span>
+          <span className="text-[11px] text-neutral-500 mt-1 block">acumulado para próximo fechamento</span>
         </div>
 
-        {/* Card 3: Total Acumulado */}
-        <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
-          <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-            Total Acumulado
-          </span>
-          <div className="text-2xl sm:text-3xl font-black text-neutral-900 mt-1">
-            {formatCurrency(metrics.totalAcumulado)}
-          </div>
-          <span className="text-[11px] text-neutral-500 mt-1 block">histórico total da loja</span>
-        </div>
-
-        {/* Card 4: Total Pago */}
         <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
           <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
-            Total Pago
+            Total Repassado (Pago)
           </span>
           <div className="text-2xl sm:text-3xl font-black text-emerald-600 mt-1">
-            {formatCurrency(metrics.totalPago)}
+            {formatCurrency(metrics.totalPagoHistorico)}
           </div>
-          <span className="text-[11px] text-neutral-500 mt-1 block">repasses confirmados</span>
+          <span className="text-[11px] text-neutral-500 mt-1 block">histórico quitado</span>
         </div>
 
-        {/* Card 5: Saldo Pendente */}
-        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 shadow-xs col-span-2 lg:col-span-1">
+        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 shadow-xs">
           <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">
-            Saldo Pendente
+            Faturas Pendentes
           </span>
           <div className="text-2xl sm:text-3xl font-black text-amber-900 mt-1">
-            {formatCurrency(metrics.saldoPendente)}
+            {metrics.pendingInvoices.length}
           </div>
-          <span className="text-[11px] text-amber-700 mt-1 block">a acertar no fechamento</span>
+          <span className="text-[11px] text-amber-700 mt-1 block">aguardando liquidação/análise</span>
         </div>
       </div>
 
-      {/* Banner Informativo de Regras */}
+      {/* Banner de Esclarecimento sobre Vendas */}
       <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-start gap-3 text-blue-900">
         <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
         <div className="text-xs space-y-1">
-          <p className="font-bold">Como funciona a Taxa Operacional do Pede AI:</p>
+          <p className="font-bold">Informação sobre o Repasse Operacional:</p>
           <p className="text-blue-800 leading-relaxed">
-            A taxa de <strong>{formatCurrency(taxaUnit)}</strong> incide exclusivamente sobre <strong>pedidos válidos e concluídos</strong> (entregues aos clientes). Pedidos cancelados, recusados ou de teste nunca são cobrados. O fechamento ocorre de forma <strong>{config?.periodoApuracao || 'mensal'}</strong> e o repasse é feito via Pix diretamente para a administração da plataforma.
+            O dinheiro total das vendas é recebido diretamente pelo seu estabelecimento (via Pix da loja, dinheiro ou cartão na entrega). O <strong>Repasse Operacional</strong> é o pagamento das pequenas taxas da plataforma Pede AI. Pedidos de teste ou cancelados nunca são cobrados.
           </p>
         </div>
       </div>
 
-      {/* Seção de Faturas / Cobranças Emitidas */}
+      {/* Seção de Cobranças Emitidas */}
       {invoices.length > 0 && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black text-neutral-900 uppercase tracking-wider flex items-center gap-2">
               <FileText className="w-4 h-4 text-neutral-600" />
-              <span>Minhas Cobranças & Faturas</span>
+              <span>Faturas e Cobranças de Repasse</span>
             </h2>
             <span className="text-xs font-bold text-neutral-500">{invoices.length} fatura(s)</span>
           </div>
@@ -277,7 +359,9 @@ export const OperationalFeePage: React.FC = () => {
                 <tr className="border-b border-neutral-200 text-neutral-400 font-bold uppercase text-[10px]">
                   <th className="py-2.5 px-3">Período</th>
                   <th className="py-2.5 px-3">Pedidos</th>
-                  <th className="py-2.5 px-3">Valor Total</th>
+                  <th className="py-2.5 px-3">Valor Fatura</th>
+                  <th className="py-2.5 px-3">Créditos/Descontos</th>
+                  <th className="py-2.5 px-3">A Pagar</th>
                   <th className="py-2.5 px-3">Vencimento</th>
                   <th className="py-2.5 px-3">Situação</th>
                   <th className="py-2.5 px-3 text-right">Ação</th>
@@ -287,13 +371,19 @@ export const OperationalFeePage: React.FC = () => {
                 {invoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-neutral-50 transition-colors">
                     <td className="py-3 px-3 font-mono">
-                      {inv.periodoInicio} até {inv.periodoFim}
+                      {inv.periodoInicio} a {inv.periodoFim}
                     </td>
                     <td className="py-3 px-3 font-bold text-neutral-800">
                       {inv.quantidadePedidos} pedido(s)
                     </td>
+                    <td className="py-3 px-3 text-neutral-700">
+                      {formatCurrency(inv.valorBruto)}
+                    </td>
+                    <td className="py-3 px-3 text-emerald-600 font-medium">
+                      {inv.creditosUtilizados > 0 ? `-${formatCurrency(inv.creditosUtilizados)}` : '—'}
+                    </td>
                     <td className="py-3 px-3 font-black text-neutral-900 text-sm">
-                      {formatCurrency(inv.valorTotal)}
+                      {formatCurrency(inv.valorTotalAPagar)}
                     </td>
                     <td className="py-3 px-3 text-neutral-600">
                       {inv.vencimento}
@@ -309,9 +399,14 @@ export const OperationalFeePage: React.FC = () => {
                           <Clock className="w-3 h-3" /> EM ANÁLISE
                         </span>
                       )}
-                      {inv.status === 'aberta' && (
+                      {inv.status === 'em_aberto' && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 flex items-center gap-1 w-fit">
-                          <Clock className="w-3 h-3" /> PENDENTE
+                          <Clock className="w-3 h-3" /> EM ABERTO
+                        </span>
+                      )}
+                      {inv.status === 'parcialmente_paga' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 flex items-center gap-1 w-fit">
+                          <Clock className="w-3 h-3" /> PARCIAL
                         </span>
                       )}
                       {inv.status === 'vencida' && (
@@ -325,7 +420,7 @@ export const OperationalFeePage: React.FC = () => {
                         onClick={() => setSelectedInvoice(inv)}
                         className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1"
                       >
-                        <span>{inv.status === 'paga' ? 'Ver Detalhes' : 'Pagar / Enviar Comprovante'}</span>
+                        <span>{inv.status === 'paga' ? 'Ver Comprovante' : 'Pagar / Informar'}</span>
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -342,10 +437,10 @@ export const OperationalFeePage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-black text-neutral-900 uppercase tracking-wider">
-              Extrato Detalhado de Pedidos
+              Extrato Detalhado por Pedido Concluído
             </h2>
             <p className="text-xs text-neutral-500">
-              Cada pedido concluído gera um lançamento único e auditável.
+              Registros individuais gerados automaticamente a cada entrega efetuada.
             </p>
           </div>
 
@@ -393,8 +488,9 @@ export const OperationalFeePage: React.FC = () => {
               <tr className="border-b border-neutral-200 text-neutral-400 font-bold uppercase text-[10px]">
                 <th className="py-2.5 px-3">Pedido</th>
                 <th className="py-2.5 px-3">Data Conclusão</th>
-                <th className="py-2.5 px-3">Valor da Venda</th>
-                <th className="py-2.5 px-3">Taxa Operacional</th>
+                <th className="py-2.5 px-3">Venda Loja</th>
+                <th className="py-2.5 px-3">Taxa Repasse</th>
+                <th className="py-2.5 px-3">Modalidade</th>
                 <th className="py-2.5 px-3">Situação</th>
                 <th className="py-2.5 px-3">Fatura</th>
               </tr>
@@ -402,7 +498,7 @@ export const OperationalFeePage: React.FC = () => {
             <tbody className="divide-y divide-neutral-100 font-medium">
               {filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-neutral-400 text-xs">
+                  <td colSpan={7} className="py-8 text-center text-neutral-400 text-xs">
                     Nenhum lançamento encontrado com os filtros selecionados.
                   </td>
                 </tr>
@@ -420,6 +516,9 @@ export const OperationalFeePage: React.FC = () => {
                     </td>
                     <td className="py-2.5 px-3 font-bold text-indigo-700">
                       {formatCurrency(e.taxaAplicada)}
+                    </td>
+                    <td className="py-2.5 px-3 text-neutral-500 capitalize">
+                      {e.modalidadeAplicada || 'diaria'}
                     </td>
                     <td className="py-2.5 px-3">
                       {e.status === 'pendente' && (
@@ -461,7 +560,7 @@ export const OperationalFeePage: React.FC = () => {
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <div>
                 <h3 className="font-black text-base text-neutral-900">
-                  {selectedInvoice.status === 'paga' ? 'Comprovante da Cobrança' : 'Efetuar Repasse via Pix'}
+                  {selectedInvoice.status === 'paga' ? 'Comprovante do Repasse' : 'Efetuar Repasse Operacional via Pix'}
                 </h3>
                 <span className="text-xs text-neutral-500 font-mono">
                   Fatura: {selectedInvoice.id}
@@ -484,21 +583,32 @@ export const OperationalFeePage: React.FC = () => {
                 </span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Pedidos Concluídos:</span>
+                <span className="text-neutral-500">Pedidos Cobrados:</span>
                 <span className="font-bold text-neutral-800">{selectedInvoice.quantidadePedidos}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Vencimento:</span>
+                <span className="text-neutral-500">Valor Bruto das Taxas:</span>
+                <span className="font-bold text-neutral-800">{formatCurrency(selectedInvoice.valorBruto)}</span>
+              </div>
+              {selectedInvoice.creditosUtilizados > 0 && (
+                <div className="flex justify-between text-xs text-emerald-600 font-bold">
+                  <span>Crédito Compensado:</span>
+                  <span>-{formatCurrency(selectedInvoice.creditosUtilizados)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span className="text-neutral-500">Data de Vencimento:</span>
                 <span className="font-bold text-neutral-800">{selectedInvoice.vencimento}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Beneficiário:</span>
+                <span className="text-neutral-500">Beneficiário da Plataforma:</span>
                 <span className="font-bold text-neutral-800">{selectedInvoice.pixRecebedor || 'Pede AI Plataforma'}</span>
               </div>
+
               <div className="border-t border-neutral-200 pt-2 flex justify-between items-center">
-                <span className="text-xs font-bold text-neutral-700">Valor Total a Pagar:</span>
+                <span className="text-xs font-bold text-neutral-700">Valor a Pagar:</span>
                 <span className="text-xl font-black text-emerald-600">
-                  {formatCurrency(selectedInvoice.valorTotal)}
+                  {formatCurrency(selectedInvoice.valorTotalAPagar)}
                 </span>
               </div>
             </div>
@@ -512,7 +622,7 @@ export const OperationalFeePage: React.FC = () => {
                   className="w-44 h-44 rounded-xl border border-neutral-300"
                 />
                 <span className="text-[11px] text-neutral-500 mt-2 font-medium">
-                  Abra o app do seu banco e aponte a câmera
+                  Abra o aplicativo do seu banco e aponte a câmera
                 </span>
 
                 {selectedInvoice.pixPayload && (
@@ -536,7 +646,7 @@ export const OperationalFeePage: React.FC = () => {
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="Ex: Pago às 15:30 pelo Banco Inter (Autenticação: E123456...)"
+                    placeholder="Ex: Pago pelo Banco Itaú (TxID: E123456...)"
                     value={proofText}
                     onChange={(e) => setProofText(e.target.value)}
                     className="w-full text-xs p-3 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 outline-none"
@@ -569,7 +679,7 @@ export const OperationalFeePage: React.FC = () => {
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center gap-3 text-emerald-900">
                 <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
                 <div className="text-xs">
-                  <p className="font-bold">Fatura Liquidada com Sucesso!</p>
+                  <p className="font-bold">Fatura Quitada com Sucesso!</p>
                   <p className="text-emerald-700">
                     Confirmado em {formatDateTime(selectedInvoice.confirmadoEm || selectedInvoice.geradoEm)} por {selectedInvoice.confirmadoPor || 'Administração'}.
                   </p>

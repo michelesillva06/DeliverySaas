@@ -1060,6 +1060,26 @@ export const SuperAdminPage: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setTab('taxas')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all cursor-pointer ${
+              tab === 'taxas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-neutral-600 hover:text-indigo-600'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            <span>Taxas por Pedido & Repasse</span>
+          </button>
+
+          <button
+            onClick={() => setTab('cobrancas')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all cursor-pointer ${
+              tab === 'cobrancas' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Faturas & Cobranças</span>
+          </button>
+
+          <button
             onClick={() => setTab('nova_loja')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all cursor-pointer ${
               tab === 'nova_loja' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
@@ -1348,6 +1368,16 @@ export const SuperAdminPage: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* TAB: TAXAS POR PEDIDO & REPASSE */}
+        {tab === 'taxas' && (
+          <OperationalFeeTab stores={stores} authorEmail={currentUser?.email || 'superadmin'} />
+        )}
+
+        {/* TAB: FATURAS & COBRANÇAS */}
+        {tab === 'cobrancas' && (
+          <OperationalInvoicesTab stores={stores} authorEmail={currentUser?.email || 'superadmin'} />
         )}
 
         {/* TAB 2: NOVA LOJA */}

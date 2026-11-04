@@ -147,7 +147,7 @@ export const ReportsExportTab: React.FC<ReportsExportTabProps> = ({
         i.periodoInicio,
         i.periodoFim,
         i.quantidadePedidos,
-        (i.valorTotal || 0).toFixed(2),
+        (i.valorTotalAPagar ?? i.valorBruto ?? 0).toFixed(2),
         i.vencimento,
         i.status,
         i.confirmadoEm || '',

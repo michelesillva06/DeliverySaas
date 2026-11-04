@@ -165,14 +165,12 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     if (!openStatus.isOpen) {
       const msg = openStatus.reason || 'A loja está fechada no momento e não pode receber pedidos.';
       setSubmissionError(msg);
-      showToast(msg, 'error');
       return;
     }
 
     if (subtotal < (store.pedidoMinimo || 0)) {
       const msg = `O pedido mínimo deste estabelecimento é ${formatCurrency(store.pedidoMinimo)}.`;
       setSubmissionError(msg);
-      showToast(msg, 'error');
       return;
     }
 
@@ -194,7 +192,6 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
 
     if (!validation.success) {
       setSubmissionError(validation.error);
-      showToast(validation.error, 'error');
       return;
     }
 
@@ -334,12 +331,11 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       if (err?.code === 'unavailable' || err?.message?.includes('network')) {
         friendlyError = 'Falha de conexão com a internet. Verifique sua rede e tente novamente.';
       } else if (err?.code === 'permission-denied') {
-        friendlyError = 'Não foi possível registrar o pedido devido a uma restrição de segurança no banco de dados. Tente novamente.';
+        friendlyError = 'Não foi possível registrar o pedido no banco de dados. Caso o problema persista, utilize o botão abaixo para enviar os itens diretamente pelo WhatsApp da loja.';
       } else if (err?.message) {
         friendlyError = err.message;
       }
       setSubmissionError(friendlyError);
-      showToast(friendlyError, 'error');
       setIsSubmitting(false);
     }
   };
@@ -712,19 +708,35 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
 
             {/* Banner de Erro com Ação de Tentar Novamente */}
             {submissionError && (
-              <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start gap-3 text-rose-950">
+              <div className="p-4 sm:p-5 bg-rose-50 border-2 border-rose-300 rounded-3xl flex items-start gap-3.5 text-rose-950">
                 <AlertCircle className="w-6 h-6 text-rose-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-black text-base text-rose-900">Não foi possível confirmar o pedido</p>
                   <p className="text-sm mt-0.5 text-rose-800 leading-relaxed">{submissionError}</p>
-                  <button
-                    type="button"
-                    onClick={() => handleSubmitOrder()}
-                    className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-sm font-black transition-colors"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Tentar Novamente</span>
-                  </button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSubmitOrder()}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-sm font-black transition-colors min-h-[44px] cursor-pointer"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      <span>Tentar Novamente</span>
+                    </button>
+                    {store.whatsapp && (
+                      <a
+                        href={generateWhatsAppUrl(
+                          store.whatsapp,
+                          `Olá! Tentei concluir um pedido no valor de ${formatCurrency(total)} pelo cardápio digital, mas ocorreu uma falha de conexão. Segue os meus dados para atendimento direto: ${nome} - ${telefone}.`
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-rose-300 hover:bg-rose-100 text-rose-900 rounded-xl text-sm font-bold transition-colors min-h-[44px]"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-600" />
+                        <span>Falar com o atendente no WhatsApp</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

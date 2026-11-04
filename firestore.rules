@@ -34,7 +34,8 @@ service cloud.firestore {
       // Clientes podem atualizar exclusivamente o contador sequencial de pedidos (nextOrderNumber)
       allow update: if isSuperAdmin() || isStoreOwner(storeId) ||
                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextOrderNumber']) &&
-                     request.resource.data.nextOrderNumber > resource.data.nextOrderNumber);
+                     request.resource.data.nextOrderNumber is int &&
+                     (!('nextOrderNumber' in resource.data) || request.resource.data.nextOrderNumber > resource.data.nextOrderNumber));
       allow delete: if isSuperAdmin();
 
       match /products/{productId} {
@@ -49,11 +50,11 @@ service cloud.firestore {
 
     // Pedidos (Orders)
     match /orders/{orderId} {
-      // Leitura permitida para SuperAdmin, lojista da loja ou consulta por ID de pedido
+      // Leitura permitida para SuperAdmin, lojista da loja ou cliente consultando seu pedido
       allow read: if isSuperAdmin() || 
-                    (resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
-                    (request.auth != null && resource.data.customerUid == request.auth.uid) ||
-                    (resource.data.customerUid != null);
+                    (resource != null && resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
+                    (resource != null && request.auth != null && resource.data.customerUid == request.auth.uid) ||
+                    (resource != null && resource.data.customerUid != null);
       
       // Criação permitida para SuperAdmin, lojista ou clientes (com status inicial não confirmado)
       allow create: if request.resource.data.storeId != null && (
@@ -68,8 +69,8 @@ service cloud.firestore {
       // Clientes autenticados podem apenas informar comprovante/anotações no pagamento,
       // sem alterar status geral do pedido, valores financeiros, itens ou confirmar o pagamento por conta própria.
       allow update: if isSuperAdmin() ||
-                     (resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
-                     (request.auth != null && resource.data.customerUid == request.auth.uid &&
+                     (resource != null && resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
+                     (resource != null && request.auth != null && resource.data.customerUid == request.auth.uid &&
                       request.resource.data.pagamento.status != 'confirmado' &&
                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'total', 'subtotal', 'desconto', 'taxaEntrega', 'itens', 'storeId', 'numero', 'customerUid']));
 

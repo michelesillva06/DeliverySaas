@@ -184,6 +184,26 @@ export function getNextOpeningText(horarios: DayHours[], now: Date = getManausNo
 }
 
 /**
+ * Verifica se a data de vencimento da assinatura da loja já passou
+ */
+export function isStoreExpired(store: Store): boolean {
+  if (store.status === 'vencida') return true;
+  if (!store.dataVencimento) return false;
+  const vence = new Date(store.dataVencimento);
+  return !isNaN(vence.getTime()) && vence < new Date();
+}
+
+/**
+ * Retorna o status efetivo da loja levando em conta bloqueios e vencimento da assinatura
+ */
+export function getStoreEffectiveStatus(store: Store): 'aguardando_ativacao' | 'ativa' | 'vencida' | 'bloqueada' {
+  if (store.status === 'bloqueada') return 'bloqueada';
+  if (store.status === 'aguardando_ativacao') return 'aguardando_ativacao';
+  if (isStoreExpired(store)) return 'vencida';
+  return store.status || 'ativa';
+}
+
+/**
  * Calcula se a loja está aberta respeitando:
  * 1. Status da loja (não pode estar bloqueada nem vencida)
  * 2. Botão manual "aberta" (se falso, loja fechada imediatamente)
@@ -193,8 +213,8 @@ export function isStoreOpen(store: Store): { isOpen: boolean; reason?: string } 
   if (store.status === 'bloqueada') {
     return { isOpen: false, reason: 'Loja temporariamente suspensa.' };
   }
-  if (store.status === 'vencida') {
-    return { isOpen: false, reason: 'Assinatura da loja indisponível no momento.' };
+  if (isStoreExpired(store)) {
+    return { isOpen: false, reason: 'Assinatura da loja indisponível no momento (vencida).' };
   }
   if (!store.aberta) {
     return { isOpen: false, reason: 'Fechada no momento (pausa manual do lojista).' };

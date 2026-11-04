@@ -19,8 +19,10 @@ import { signInAnonymously } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { SUPPORT_WHATSAPP } from '../lib/constants';
 import { limparObjeto } from '../lib/utils';
+import { isStoreOpen, isStoreExpired, getStoreEffectiveStatus } from '../lib/formatters';
 import {
   Store,
+  StoreStatus,
   DayHours,
   Category,
   Product,
@@ -36,7 +38,7 @@ import {
   StorePayment,
   SaasPaymentRequest,
 } from '../types';
-import { recordOrderOperationalFee, reverseOrderOperationalFee } from './operationalFeeService';
+import { recordOrderOperationalFee, reverseOrderOperationalFee, recordAdminAuditLog } from './operationalFeeService';
 
 // ==========================================
 // ANONYMOUS AUTH HELPER FOR CUSTOMERS
@@ -48,14 +50,11 @@ export async function ensureAnonymousCustomerAuth(): Promise<string> {
   try {
     const cred = await signInAnonymously(auth);
     return cred.user.uid;
-  } catch (err) {
-    console.warn('Login anônimo do Firebase indisponível, gerando UID de sessão:', err);
-    let anon = localStorage.getItem('delivery_customer_anon_uid');
-    if (!anon) {
-      anon = `anon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      localStorage.setItem('delivery_customer_anon_uid', anon);
-    }
-    return anon;
+  } catch (err: any) {
+    console.error('Falha na autenticação anônima do cliente no Firebase:', err);
+    throw new Error(
+      'Não foi possível estabelecer uma sessão segura no Firebase. Verifique sua conexão com a internet para registrar o pedido com segurança.'
+    );
   }
 }
 
@@ -180,13 +179,32 @@ export function subscribeToAllStores(callback: (stores: Store[]) => void): Unsub
 
 export async function saveStoreToFirestore(store: Store): Promise<void> {
   const docRef = doc(db, 'stores', store.id);
-  await setDoc(docRef, limparObjeto(store), { merge: true });
+  // Proteção: Nunca salvar senhas em texto puro no documento público da loja
+  const { senha, senhaTemporaria, ...safeStore } = store as any;
+  await setDoc(docRef, limparObjeto(safeStore), { merge: true });
 }
 export const saveStoreInFirestore = saveStoreToFirestore;
 
-export async function updateStoreStatusInFirestore(storeId: string, aberta: boolean): Promise<void> {
+export async function updateStoreStatusInFirestore(
+  storeId: string,
+  abertaOrStatus: boolean | StoreStatus
+): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  if (typeof abertaOrStatus === 'boolean') {
+    await updateDoc(docRef, limparObjeto({ aberta: abertaOrStatus }));
+  } else {
+    await updateDoc(docRef, limparObjeto({ status: abertaOrStatus }));
+  }
+}
+
+export async function updateStoreOpenStatusInFirestore(storeId: string, aberta: boolean): Promise<void> {
   const docRef = doc(db, 'stores', storeId);
   await updateDoc(docRef, limparObjeto({ aberta }));
+}
+
+export async function updateStoreBillingStatusInFirestore(storeId: string, status: StoreStatus): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  await updateDoc(docRef, limparObjeto({ status }));
 }
 
 export async function updateStoreHorariosInFirestore(
@@ -249,9 +267,30 @@ export function subscribeToAllOrders(
   );
 }
 
+// Regras de transição válida de status de pedidos (máquina de estados finitos)
+export const VALID_ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  novo: ['aceito', 'cancelado'],
+  aceito: ['preparo', 'cancelado'],
+  preparo: ['saiu_entrega', 'pronto', 'cancelado'],
+  saiu_entrega: ['entregue', 'cancelado'],
+  pronto: ['entregue', 'cancelado'],
+  entregue: [],
+  cancelado: [],
+};
+
+// Regras de transição válida de status de pagamento
+export const VALID_PAYMENT_STATUS_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
+  aguardando: ['informado', 'confirmado', 'estornado'],
+  na_entrega: ['confirmado', 'estornado'],
+  informado: ['confirmado', 'aguardando', 'estornado'],
+  confirmado: ['estornado'],
+  estornado: [],
+};
+
 export function subscribeToOrderById(
   orderId: string,
-  callback: (order: Order | null) => void
+  callback: (order: Order | null) => void,
+  onError?: (err: any) => void
 ): Unsubscribe {
   const docRef = doc(db, 'orders', orderId);
   return onSnapshot(
@@ -265,6 +304,7 @@ export function subscribeToOrderById(
     },
     (err) => {
       console.error('Erro no snapshot do pedido:', err);
+      if (onError) onError(err);
     }
   );
 }
@@ -297,54 +337,291 @@ export async function getOrdersByStoreFromFirestore(storeId: string): Promise<Or
   }
 }
 
+/**
+ * Criação confiável e atômica de pedidos no Firestore.
+ * 1. Recalcula preços de produtos, complementos, cupons e taxas de entrega a partir dos dados oficiais do banco.
+ * 2. Valida loja aberta, produtos ativos, regras de complementos e pedido mínimo.
+ * 3. Garante número sequencial estritamente atômico e gravação no mesmo bloco de transação.
+ * 4. Idempotência: caso o mesmo pedido (idempotencyKey / id) seja reenviado, retorna o pedido existente sem duplicá-lo.
+ */
 export async function createOrderInFirestore(
-  orderData: Omit<Order, 'id' | 'numero' | 'criadoEm' | 'historicoStatus'>
+  orderData: Omit<Order, 'numero' | 'criadoEm' | 'historicoStatus'> & {
+    id?: string;
+    idempotencyKey?: string;
+  }
 ): Promise<Order> {
-  const storeRef = doc(db, 'stores', orderData.storeId);
-  const newOrderId = `ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  const orderRef = doc(db, 'orders', newOrderId);
+  if (!orderData.storeId) {
+    throw new Error('Identificador da loja (storeId) é obrigatório.');
+  }
 
-  // Executar transação atômica para ler e incrementar nextOrderNumber da loja
-  let nextNumber = 1;
-  try {
-    nextNumber = await runTransaction(db, async (transaction) => {
-      const storeDoc = await transaction.get(storeRef);
-      let currentNumber = 1;
-      if (storeDoc.exists()) {
-        const sData = storeDoc.data() as Store;
-        currentNumber = typeof sData.nextOrderNumber === 'number' && sData.nextOrderNumber > 0 ? sData.nextOrderNumber : 1;
+  const storeRef = doc(db, 'stores', orderData.storeId);
+  const storeSnap = await getDoc(storeRef);
+  if (!storeSnap.exists()) {
+    throw new Error('Loja não encontrada ou inativa.');
+  }
+  const store = storeSnap.data() as Store;
+
+  // 1. Validar disponibilidade da loja e status da assinatura/licença
+  if (store.status === 'bloqueada' || store.status === 'aguardando_ativacao') {
+    throw new Error('Esta loja não está disponível para receber novos pedidos no momento.');
+  }
+  if (isStoreExpired(store)) {
+    throw new Error('A assinatura desta loja está vencida no momento. Não é possível concluir o pedido.');
+  }
+  const openStatus = isStoreOpen(store);
+  if (!openStatus.isOpen) {
+    throw new Error(openStatus.reason || 'A loja está fechada para novos pedidos no momento.');
+  }
+
+  // 2. Validar modalidade de atendimento
+  if (orderData.tipo === 'entrega' && store.aceitaEntrega === false) {
+    throw new Error('Esta loja não realiza entregas no momento.');
+  }
+  if (orderData.tipo === 'retirada' && store.aceitaRetirada === false) {
+    throw new Error('Esta loja não aceita retirada no balcão.');
+  }
+
+  // 3. Validar itens do carrinho
+  if (!orderData.itens || orderData.itens.length === 0) {
+    throw new Error('O carrinho de itens está vazio.');
+  }
+
+  // 4. Buscar e validar produtos oficiais do Firestore
+  const uniqueProdIds = Array.from(new Set(orderData.itens.map((i) => i.produtoId)));
+  const prodDocs = await Promise.all(uniqueProdIds.map((pid) => getDoc(doc(db, 'products', pid))));
+  const prodMap = new Map<string, Product>();
+
+  for (const pDoc of prodDocs) {
+    if (!pDoc.exists()) {
+      throw new Error('Um dos produtos selecionados não foi encontrado no cardápio.');
+    }
+    const prod = pDoc.data() as Product;
+    if (prod.storeId !== orderData.storeId || prod.ativo === false) {
+      throw new Error(`O produto "${prod.nome}" está indisponível para pedidos.`);
+    }
+    prodMap.set(prod.id, prod);
+  }
+
+  // 5. Buscar e validar grupos de opcionais oficiais
+  const uniqueGroupIds = Array.from(
+    new Set(
+      orderData.itens
+        .flatMap((it) => (it.complementos || []).map((c) => c.grupoId))
+        .filter(Boolean)
+    )
+  );
+  const groupDocs = await Promise.all(
+    uniqueGroupIds.map((gid) => getDoc(doc(db, 'option_groups', gid)))
+  );
+  const groupMap = new Map<string, OptionGroup>();
+  for (const gDoc of groupDocs) {
+    if (gDoc.exists()) {
+      const group = gDoc.data() as OptionGroup;
+      if (group.storeId === orderData.storeId) {
+        groupMap.set(group.id, group);
       }
-      transaction.update(storeRef, limparObjeto({ nextOrderNumber: currentNumber + 1 }));
-      return currentNumber;
-    });
-  } catch (tError) {
-    console.warn('Aviso na transação de numeração de pedido, calculando fallback:', tError);
-    // Fallback caso a transação falhe (ex: doc de loja não encontrado ou permissão)
-    const storeSnap = await getDoc(storeRef);
-    if (storeSnap.exists()) {
-      const sData = storeSnap.data() as Store;
-      nextNumber = typeof sData.nextOrderNumber === 'number' && sData.nextOrderNumber > 0 ? sData.nextOrderNumber : 1;
-      await updateDoc(storeRef, limparObjeto({ nextOrderNumber: nextNumber + 1 })).catch(() => {});
     }
   }
 
-  const nowIso = new Date().toISOString();
-  const newOrder: Order = {
-    ...orderData,
-    id: newOrderId,
-    numero: nextNumber,
-    criadoEm: nowIso,
-    historicoStatus: [
-      {
-        status: orderData.status,
-        em: nowIso,
-        nota: 'Pedido recebido pelo sistema',
-      },
-    ],
-  };
+  // 6. Recalcular cada item com preços oficiais
+  let calculatedSubtotal = 0;
+  const recalculatedItems = orderData.itens.map((item, idx) => {
+    const prod = prodMap.get(item.produtoId)!;
+    const qtd = Math.max(1, Math.floor(Number(item.qtd) || 1));
 
-  await setDoc(orderRef, limparObjeto(newOrder));
-  return newOrder;
+    // Preço base oficial (considerando preço promocional se válido)
+    const officialBasePrice =
+      typeof prod.precoPromocional === 'number' && prod.precoPromocional > 0 && prod.precoPromocional < prod.preco
+        ? prod.precoPromocional
+        : prod.preco;
+
+    // Validar e recalcular complementos
+    let complementsTotal = 0;
+    const cleanComplements: Order['itens'][0]['complementos'] = [];
+
+    // Agrupar contagens para validar limites mínimos e máximos por grupo
+    const countsByGroup: Record<string, number> = {};
+
+    (item.complementos || []).forEach((c) => {
+      const group = groupMap.get(c.grupoId);
+      let officialComplementPrice = 0;
+      let officialComplementName = c.nome;
+
+      if (group) {
+        countsByGroup[c.grupoId] = (countsByGroup[c.grupoId] || 0) + 1;
+        const foundOpt = (group.opcoes || []).find(
+          (o) => o.id === c.opcaoId || o.nome.toLowerCase() === c.nome.toLowerCase()
+        );
+        if (foundOpt) {
+          officialComplementPrice = Math.max(0, Number(foundOpt.preco) || 0);
+          officialComplementName = foundOpt.nome;
+        }
+      }
+
+      complementsTotal += officialComplementPrice;
+      cleanComplements.push({
+        grupoId: c.grupoId || '',
+        grupoNome: group?.nome || c.grupoNome || '',
+        opcaoId: c.opcaoId || '',
+        nome: officialComplementName,
+        preco: officialComplementPrice,
+      });
+    });
+
+    // Validar obrigatoriedade e limites máximos dos grupos
+    groupMap.forEach((group, gid) => {
+      const count = countsByGroup[gid] || 0;
+      const minRequired = group.obrigatorio ? Math.max(1, group.min || 1) : group.min || 0;
+      if (count < minRequired) {
+        throw new Error(
+          `O grupo "${group.nome}" exige no mínimo ${minRequired} opção(ões) selecionada(s).`
+        );
+      }
+      if (typeof group.max === 'number' && group.max > 0 && count > group.max) {
+        throw new Error(
+          `O grupo "${group.nome}" permite no máximo ${group.max} opção(ões).`
+        );
+      }
+    });
+
+    const itemUnitPrice = officialBasePrice + complementsTotal;
+    const totalItem = itemUnitPrice * qtd;
+    calculatedSubtotal += totalItem;
+
+    return {
+      id: item.id || `item_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      produtoId: prod.id,
+      nome: prod.nome,
+      qtd,
+      precoUnit: officialBasePrice,
+      complementos: cleanComplements,
+      obs: (item.obs || '').trim(),
+      totalItem,
+    };
+  });
+
+  // 7. Validar pedido mínimo da loja
+  const minStore = Math.max(0, Number(store.pedidoMinimo) || 0);
+  if (calculatedSubtotal < minStore) {
+    throw new Error(
+      `O subtotal dos produtos (R$ ${calculatedSubtotal.toFixed(2)}) não atinge o pedido mínimo de R$ ${minStore.toFixed(2)}.`
+    );
+  }
+
+  // 8. Recalcular taxa de entrega oficial
+  let calculatedDeliveryFee = 0;
+  if (orderData.tipo === 'entrega') {
+    if (!orderData.endereco?.bairro) {
+      throw new Error('Informe o bairro de entrega para calcular o valor da taxa.');
+    }
+    const cleanBairro = orderData.endereco.bairro.trim().toLowerCase();
+    const zonesSnap = await getDocs(
+      query(collection(db, 'delivery_zones'), where('storeId', '==', orderData.storeId))
+    );
+    const zones = zonesSnap.docs.map((d) => d.data() as DeliveryZone);
+    const matchedZone = zones.find(
+      (z) => z.ativo !== false && z.bairro.trim().toLowerCase() === cleanBairro
+    );
+
+    if (matchedZone) {
+      calculatedDeliveryFee = Math.max(0, Number(matchedZone.taxa) || 0);
+    } else {
+      calculatedDeliveryFee = Math.max(0, Number(orderData.taxaEntrega) || 0);
+    }
+  }
+
+  // 9. Recalcular cupom de desconto oficial
+  let calculatedDiscount = 0;
+  let validatedCouponCode: string | null = null;
+  if (orderData.cupom) {
+    const couponValidation = await validateCouponInFirestore(
+      orderData.storeId,
+      orderData.cupom,
+      calculatedSubtotal
+    );
+    if (couponValidation.valid) {
+      calculatedDiscount = couponValidation.discount;
+      validatedCouponCode = couponValidation.coupon?.codigo || null;
+    }
+  }
+
+  // 10. Recalcular total oficial
+  const calculatedTotal = Math.max(0, calculatedSubtotal + calculatedDeliveryFee - calculatedDiscount);
+
+  // 11. Validação de pagamento e troco
+  if (orderData.pagamento.forma === 'dinheiro' && orderData.pagamento.troco) {
+    if (orderData.pagamento.troco < calculatedTotal) {
+      throw new Error(
+        `O valor informado para troco (R$ ${orderData.pagamento.troco.toFixed(2)}) é menor que o total do pedido (R$ ${calculatedTotal.toFixed(2)}).`
+      );
+    }
+  }
+
+  // Status de pagamento inicial seguro (nunca permite injeção de 'confirmado' pelo cliente)
+  const safeInitialPaymentStatus: PaymentStatus =
+    orderData.pagamento.forma === 'dinheiro' || orderData.pagamento.forma === 'cartao_entrega'
+      ? 'na_entrega'
+      : 'aguardando';
+
+  // 12. Idempotência e numeração atômica em transação Firestore
+  const targetOrderId =
+    orderData.id || orderData.idempotencyKey || `ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const orderRef = doc(db, 'orders', targetOrderId);
+
+  const createdOrder = await runTransaction(db, async (transaction) => {
+    // Verificar idempotência: se o documento já existe, retornar sem duplicar nem incrementar número
+    const existingOrderDoc = await transaction.get(orderRef);
+    if (existingOrderDoc.exists()) {
+      return existingOrderDoc.data() as Order;
+    }
+
+    // Ler número sequencial atual da loja
+    const currentStoreDoc = await transaction.get(storeRef);
+    let nextNum = 1;
+    if (currentStoreDoc.exists()) {
+      const sData = currentStoreDoc.data() as Store;
+      nextNum =
+        typeof sData.nextOrderNumber === 'number' && sData.nextOrderNumber > 0
+          ? sData.nextOrderNumber
+          : 1;
+    }
+
+    // Atualizar sequencial da loja atomicamente
+    transaction.update(storeRef, limparObjeto({ nextOrderNumber: nextNum + 1 }));
+
+    const nowIso = new Date().toISOString();
+    const newOrder: Order = {
+      ...orderData,
+      id: targetOrderId,
+      numero: nextNum,
+      subtotal: calculatedSubtotal,
+      taxaEntrega: calculatedDeliveryFee,
+      desconto: calculatedDiscount,
+      cupom: validatedCouponCode,
+      total: calculatedTotal,
+      itens: recalculatedItems,
+      pagamento: {
+        forma: orderData.pagamento.forma,
+        status: safeInitialPaymentStatus,
+        troco: orderData.pagamento.troco,
+      },
+      status: 'novo',
+      criadoEm: nowIso,
+      historicoStatus: [
+        {
+          status: 'novo',
+          em: nowIso,
+          nota: 'Pedido recebido e validado com sucesso pelo sistema',
+        },
+      ],
+    };
+
+    // Gravar o pedido atomicamente dentro da mesma transação
+    transaction.set(orderRef, limparObjeto(newOrder));
+    return newOrder;
+  });
+
+  return createdOrder;
 }
 
 export async function updateOrderStatusInFirestore(
@@ -355,9 +632,24 @@ export async function updateOrderStatusInFirestore(
 ): Promise<void> {
   const docRef = doc(db, 'orders', orderId);
   const snap = await getDoc(docRef);
-  if (!snap.exists()) return;
+  if (!snap.exists()) {
+    throw new Error('Pedido não encontrado para atualização.');
+  }
 
   const order = snap.data() as Order;
+  const currentStatus = order.status;
+
+  // Se já estiver no status desejado, operação é idempotente
+  if (currentStatus === newStatus) return;
+
+  // Validar transição de status
+  const allowedTransitions = VALID_ORDER_STATUS_TRANSITIONS[currentStatus] || [];
+  if (!allowedTransitions.includes(newStatus)) {
+    throw new Error(
+      `Transição de status inválida: não é permitido alterar de "${currentStatus}" para "${newStatus}".`
+    );
+  }
+
   const historico = order.historicoStatus || [];
   historico.push({
     status: newStatus,
@@ -406,9 +698,22 @@ export async function updateOrderPaymentStatusInFirestore(
 ): Promise<void> {
   const docRef = doc(db, 'orders', orderId);
   const snap = await getDoc(docRef);
-  if (!snap.exists()) return;
+  if (!snap.exists()) {
+    throw new Error('Pedido não encontrado para atualização de pagamento.');
+  }
 
   const order = snap.data() as Order;
+  const currentPaymentStatus = order.pagamento?.status || 'aguardando';
+
+  if (currentPaymentStatus === newPaymentStatus) return;
+
+  const allowedTransitions = VALID_PAYMENT_STATUS_TRANSITIONS[currentPaymentStatus] || [];
+  if (!allowedTransitions.includes(newPaymentStatus)) {
+    throw new Error(
+      `Transição de pagamento inválida: não é permitido alterar de "${currentPaymentStatus}" para "${newPaymentStatus}".`
+    );
+  }
+
   const historico = order.historicoStatus || [];
   historico.push({
     status: order.status,
@@ -416,15 +721,22 @@ export async function updateOrderPaymentStatusInFirestore(
     nota: nota || `Pagamento atualizado para: ${newPaymentStatus}`,
   });
 
-  await updateDoc(docRef, limparObjeto({
-    'pagamento.status': newPaymentStatus,
-    historicoStatus: historico,
-  }));
+  await updateDoc(
+    docRef,
+    limparObjeto({
+      'pagamento.status': newPaymentStatus,
+      historicoStatus: historico,
+    })
+  );
 }
 
 export async function assignCourierInFirestore(orderId: string, courierId: string): Promise<void> {
   const docRef = doc(db, 'orders', orderId);
-  await updateDoc(docRef, limparObjeto({ entregadorId: courierId }));
+  if (courierId) {
+    await updateDoc(docRef, limparObjeto({ entregadorId: courierId }));
+  } else {
+    await updateDoc(docRef, { entregadorId: deleteField() });
+  }
 }
 
 export async function deleteTestOrdersFromFirestore(storeId: string): Promise<number> {
@@ -907,12 +1219,117 @@ export async function updateUserStatusInFirestore(uid: string, ativo: boolean): 
   await updateDoc(docRef, { ativo, atualizadoEm: new Date().toISOString() });
 }
 
-export async function updateUserPasswordInFirestore(uid: string, novaSenha: string): Promise<void> {
+/**
+ * Atualiza o registro de atualização do perfil sem persistir senhas em texto puro.
+ */
+export async function updateUserPasswordInFirestore(uid: string, _novaSenha?: string): Promise<void> {
   const docRef = doc(db, 'users', uid);
   await updateDoc(docRef, {
-    senhaTemporaria: novaSenha,
     atualizadoEm: new Date().toISOString(),
   });
+}
+
+export interface PasswordCleanupScanResult {
+  storesWithPasswords: { id: string; nome: string; hasSenha: boolean; hasSenhaTemporaria: boolean }[];
+  usersWithPasswords: { uid: string; email: string; hasSenha: boolean; hasSenhaTemporaria: boolean }[];
+}
+
+export interface PasswordCleanupExecutionResult {
+  storesCleaned: number;
+  usersCleaned: number;
+  totalCleaned: number;
+  errors: string[];
+}
+
+/**
+ * Realiza uma varredura NÃO destrutiva no Firestore identificando documentos com campos legados de senha.
+ */
+export async function scanLegacyPasswordsInFirestore(): Promise<PasswordCleanupScanResult> {
+  const result: PasswordCleanupScanResult = {
+    storesWithPasswords: [],
+    usersWithPasswords: [],
+  };
+
+  try {
+    const storesSnap = await getDocs(collection(db, 'stores'));
+    storesSnap.forEach((d) => {
+      const data = d.data();
+      if (data.senha || data.senhaTemporaria) {
+        result.storesWithPasswords.push({
+          id: d.id,
+          nome: data.nome || d.id,
+          hasSenha: Boolean(data.senha),
+          hasSenhaTemporaria: Boolean(data.senhaTemporaria),
+        });
+      }
+    });
+
+    const usersSnap = await getDocs(collection(db, 'users'));
+    usersSnap.forEach((d) => {
+      const data = d.data();
+      if (data.senha || data.senhaTemporaria) {
+        result.usersWithPasswords.push({
+          uid: d.id,
+          email: data.email || d.id,
+          hasSenha: Boolean(data.senha),
+          hasSenhaTemporaria: Boolean(data.senhaTemporaria),
+        });
+      }
+    });
+  } catch (err) {
+    console.error('Erro na varredura de senhas legadas:', err);
+  }
+
+  return result;
+}
+
+/**
+ * Executa a remoção segura dos campos legados de senha usando deleteField() do Firestore.
+ * Não altera dados cadastrais, pedidos ou funcionamento das lojas.
+ */
+export async function executeLegacyPasswordCleanup(): Promise<PasswordCleanupExecutionResult> {
+  const result: PasswordCleanupExecutionResult = {
+    storesCleaned: 0,
+    usersCleaned: 0,
+    totalCleaned: 0,
+    errors: [],
+  };
+
+  try {
+    const scan = await scanLegacyPasswordsInFirestore();
+
+    for (const s of scan.storesWithPasswords) {
+      try {
+        const storeRef = doc(db, 'stores', s.id);
+        await updateDoc(storeRef, {
+          senha: deleteField(),
+          senhaTemporaria: deleteField(),
+        });
+        result.storesCleaned += 1;
+      } catch (err: any) {
+        result.errors.push(`Erro na loja ${s.id}: ${err.message || err}`);
+      }
+    }
+
+    for (const u of scan.usersWithPasswords) {
+      try {
+        const userRef = doc(db, 'users', u.uid);
+        await updateDoc(userRef, {
+          senha: deleteField(),
+          senhaTemporaria: deleteField(),
+        });
+        result.usersCleaned += 1;
+      } catch (err: any) {
+        result.errors.push(`Erro no usuário ${u.uid}: ${err.message || err}`);
+      }
+    }
+
+    result.totalCleaned = result.storesCleaned + result.usersCleaned;
+  } catch (err: any) {
+    result.errors.push(`Falha geral na migração: ${err.message || err}`);
+  }
+
+  return result;
 }
 
 export async function updateUserProfileInFirestore(uid: string, data: Partial<UserProfile>): Promise<void> {
@@ -922,8 +1339,10 @@ export async function updateUserProfileInFirestore(uid: string, data: Partial<Us
 
 export async function saveUserProfileToFirestore(user: UserProfile): Promise<void> {
   const docRef = doc(db, 'users', user.uid);
+  // Proteção: Nunca salvar senhas em texto puro no perfil do Firestore
+  const { senha, senhaTemporaria, ...safeUser } = user as any;
   const dataToSave = {
-    ...user,
+    ...safeUser,
     ativo: user.ativo !== undefined ? user.ativo : true,
     atualizadoEm: new Date().toISOString(),
   };

@@ -115,6 +115,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
   const [trocoPara, setTrocoPara] = useState<string>('');
   const [lgpdConsent, setLgpdConsent] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const orderAttemptIdRef = React.useRef<string | null>(null);
 
   // Escutar zonas de entrega em tempo real do Firestore
   useEffect(() => {
@@ -207,11 +208,30 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         localStorage.setItem('checkout_num', cleanEndereco.numero);
       }
 
-      // Garantir autenticação anônima do cliente
-      const customerUid = currentUser?.uid || (await ensureAnonymousCustomerAuth());
+      // Garantir autenticação anônima segura do cliente
+      let customerUid = currentUser?.uid;
+      if (!customerUid) {
+        try {
+          customerUid = await ensureAnonymousCustomerAuth();
+        } catch (authErr: any) {
+          setIsSubmitting(false);
+          showToast(
+            authErr?.message || 'Falha ao autenticar sua sessão. Verifique sua conexão e tente novamente.',
+            'error'
+          );
+          return;
+        }
+      }
 
-      // Gravar pedido 100% no Firestore com número sequencial atômico
+      // Gerar ou reutilizar chave de idempotência para evitar pedidos duplicados
+      if (!orderAttemptIdRef.current) {
+        orderAttemptIdRef.current = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      }
+      const attemptOrderId = orderAttemptIdRef.current;
+
+      // Gravar pedido com dados validados e recalculados pelo backend no Firestore
       const orderPayload = limparObjeto({
+        id: attemptOrderId,
         storeId: store.id,
         customerUid,
         cliente: {
@@ -247,7 +267,8 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       const order = await createOrderInFirestore(orderPayload);
       trackStorefrontEvent(store.id, store.slug, 'concluiu_pedido');
 
-      // Limpar carrinho
+      // Limpar chave de tentativa e carrinho
+      orderAttemptIdRef.current = null;
       clearCart();
 
       // Montar mensagem para o WhatsApp da loja
@@ -288,12 +309,12 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       }\n\n`;
       whatsMsg += `*Acompanhe o pedido em tempo real:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
-      // Abrir WhatsApp da loja e redirecionar para tela de acompanhamento
+      // Abrir WhatsApp da loja em nova aba e navegar para acompanhamento
       if (store.whatsapp) {
         try {
           window.open(generateWhatsAppUrl(store.whatsapp, whatsMsg), '_blank');
         } catch (e) {
-          console.warn('Popup WhatsApp:', e);
+          console.warn('Popup do WhatsApp bloqueado pelo navegador:', e);
         }
       }
 

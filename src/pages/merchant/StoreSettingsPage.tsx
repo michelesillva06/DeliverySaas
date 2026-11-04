@@ -22,7 +22,13 @@ import {
   XCircle,
   Volume2,
   Play,
+  KeyRound,
+  ShieldCheck,
+  Send,
 } from 'lucide-react';
+import { updatePassword } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
+import { useAuth } from '../../services/authContext';
 import { Store, DeliveryZone, DayHours } from '../../types';
 import {
   saveStoreInFirestore,
@@ -137,6 +143,59 @@ export const StoreSettingsPage: React.FC = () => {
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [editingTaxa, setEditingTaxa] = useState<string>('');
   const [editingTempo, setEditingTempo] = useState<string>('');
+
+  // Acesso e Troca de Senha Segura (Firebase Auth)
+  const { currentUser, sendPasswordReset } = useAuth();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPasswordSection, setShowPasswordSection] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      showToast('A nova senha deve ter no mínimo 6 caracteres.', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast('A confirmação de senha não confere.', 'error');
+      return;
+    }
+    if (!auth.currentUser) {
+      showToast('Usuário não autenticado.', 'error');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await updatePassword(auth.currentUser, newPassword);
+      showToast('Senha alterada no Firebase Authentication com sucesso!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordSection(false);
+    } catch (err: any) {
+      console.error('Erro ao alterar senha:', err);
+      if (err?.code === 'auth/requires-recent-login') {
+        showToast('Por segurança, saia do sistema e faça login novamente para alterar sua senha.', 'error');
+      } else {
+        showToast('Erro ao atualizar senha no Firebase Auth: ' + (err.message || err), 'error');
+      }
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleSendSelfResetEmail = async () => {
+    if (!currentUser?.email) {
+      showToast('Nenhum e-mail associado à conta.', 'error');
+      return;
+    }
+    try {
+      const res = await sendPasswordReset(currentUser.email);
+      showToast(res.message, res.success ? 'success' : 'error');
+    } catch (err: any) {
+      showToast('Erro ao solicitar e-mail de redefinição: ' + (err.message || err), 'error');
+    }
+  };
   const [storeQrCodeUrl, setStoreQrCodeUrl] = useState('');
   
   useEffect(() => {
@@ -756,6 +815,79 @@ export const StoreSettingsPage: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+            {/* BLOCO: SEGURANÇA E ACESSO DA CONTA */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-xs sm:text-sm text-neutral-900">Segurança & Acesso da Conta</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      E-mail de login: <span className="font-mono font-bold text-neutral-800">{currentUser?.email}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordSection(!showPasswordSection)}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  {showPasswordSection ? 'Ocultar' : 'Alterar Minha Senha'}
+                </button>
+              </div>
+
+              {showPasswordSection && (
+                <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3 pt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block font-bold text-neutral-700 mb-1">Nova Senha (mínimo 6 caracteres)</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full p-2.5 bg-white border border-neutral-300 rounded-xl font-mono text-xs focus:ring-1 focus:ring-neutral-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-neutral-700 mb-1">Confirmar Nova Senha</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full p-2.5 bg-white border border-neutral-300 rounded-xl font-mono text-xs focus:ring-1 focus:ring-neutral-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-200">
+                    <button
+                      type="button"
+                      onClick={handleSendSelfResetEmail}
+                      className="px-3 py-1.5 text-neutral-600 hover:text-neutral-900 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Ou receber link oficial de redefinição por e-mail</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleChangePassword}
+                      disabled={changingPassword || !newPassword.trim()}
+                      className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      {changingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                      <span>{changingPassword ? 'Atualizando...' : 'Confirmar Alteração de Senha'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

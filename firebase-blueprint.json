@@ -160,6 +160,79 @@
         "whatsappSuporte": { "type": "string", "description": "Support WhatsApp" },
         "planos": { "type": "map", "description": "Pricing plans" }
       }
+    },
+    "OperationalFeeConfig": {
+      "path": "operational_fee_config/{configId}",
+      "description": "Configuração da taxa operacional por pedido da plataforma",
+      "fields": {
+        "valorPadrao": { "type": "number", "description": "Valor padrão (R$ 0,99)" },
+        "ativoGlobal": { "type": "boolean", "description": "Status global da cobrança" },
+        "periodoApuracao": { "type": "string", "description": "diario | semanal | mensal" },
+        "diasAposFechamentoVencimento": { "type": "number", "description": "Dias para vencimento" },
+        "dataInicioCobranca": { "type": "string", "description": "Data ISO de início" },
+        "lojasConfig": { "type": "map", "description": "Overrides individuais por loja" },
+        "historicoAlteracoes": { "type": "array", "description": "Log de alterações da taxa" }
+      }
+    },
+    "OperationalFeeEntry": {
+      "path": "operational_fee_entries/{entryId}",
+      "description": "Lançamento financeiro por pedido concluído",
+      "fields": {
+        "id": { "type": "string", "description": "ID único fee_{orderId}" },
+        "orderId": { "type": "string", "description": "ID do pedido" },
+        "orderNumero": { "type": "number", "description": "Número do pedido" },
+        "storeId": { "type": "string", "description": "ID da loja" },
+        "storeNome": { "type": "string", "description": "Nome da loja" },
+        "dataConclusao": { "type": "string", "description": "Data de conclusão ISO" },
+        "valorPedido": { "type": "number", "description": "Valor total do pedido" },
+        "taxaAplicada": { "type": "number", "description": "Taxa unitária aplicada" },
+        "status": { "type": "string", "description": "pendente | em_cobranca | pago | estornado | ajustado" },
+        "cobrancaId": { "type": "string", "description": "ID da fatura vinculada", "optional": true },
+        "criadoEm": { "type": "string", "description": "Timestamp de criação ISO" }
+      }
+    },
+    "OperationalInvoice": {
+      "path": "operational_invoices/{invoiceId}",
+      "description": "Fatura consolidada de repasse operacional da loja",
+      "fields": {
+        "id": { "type": "string", "description": "ID inv_{storeId}_{timestamp}" },
+        "storeId": { "type": "string", "description": "ID da loja" },
+        "storeNome": { "type": "string", "description": "Nome da loja" },
+        "periodoInicio": { "type": "string", "description": "Data início YYYY-MM-DD" },
+        "periodoFim": { "type": "string", "description": "Data fim YYYY-MM-DD" },
+        "periodoTipo": { "type": "string", "description": "diario | semanal | mensal" },
+        "quantidadePedidos": { "type": "number", "description": "Qtd pedidos faturados" },
+        "valorTotal": { "type": "number", "description": "Total da fatura em R$" },
+        "vencimento": { "type": "string", "description": "Vencimento YYYY-MM-DD" },
+        "status": { "type": "string", "description": "aberta | aguardando_confirmacao | paga | vencida | cancelada" },
+        "pedidosIds": { "type": "array", "description": "Array de orderIds" },
+        "lancamentosIds": { "type": "array", "description": "Array de entryIds" }
+      }
+    },
+    "SaasPaymentRequest": {
+      "path": "saas_payment_requests/{reqId}",
+      "description": "Comprovantes de assinatura enviados por lojistas",
+      "fields": {
+        "id": { "type": "string", "description": "ID da solicitação" },
+        "storeId": { "type": "string", "description": "ID da loja" },
+        "storeNome": { "type": "string", "description": "Nome da loja" },
+        "plano": { "type": "string", "description": "Plano assinado" },
+        "valor": { "type": "number", "description": "Valor pago" },
+        "status": { "type": "string", "description": "pendente | aprovado | rejeitado" }
+      }
+    },
+    "AdminAuditLog": {
+      "path": "admin_audit_logs/{logId}",
+      "description": "Logs de auditoria e ações administrativas do Super Admin",
+      "fields": {
+        "id": { "type": "string", "description": "ID único do log" },
+        "autorEmail": { "type": "string", "description": "Email do operador" },
+        "autorUid": { "type": "string", "description": "UID do operador" },
+        "acao": { "type": "string", "description": "Tipo de ação executada" },
+        "alvoId": { "type": "string", "description": "ID do alvo" },
+        "detalhes": { "type": "string", "description": "Descrição detalhada" },
+        "criadoEm": { "type": "string", "description": "Timestamp ISO" }
+      }
     }
   }
 }

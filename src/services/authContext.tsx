@@ -74,14 +74,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    try {
-      const cached = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
-  });
+  // Exige validação oficial do Firebase Auth antes de conceder acesso na sessão
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Anonymous customer UID per device
@@ -95,6 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const loadUserProfile = async (user: FirebaseUser): Promise<UserProfile | null> => {
+    // Clientes anônimos nunca recebem perfil administrativo ou de lojista
+    if (user.isAnonymous) {
+      localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+      setCurrentUser(null);
+      return null;
+    }
+
     try {
       console.log('[Auth Flow] Carregando perfil users/' + user.uid + ' do Firestore...');
       const userDocRef = doc(db, 'users', user.uid);
@@ -112,12 +113,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return null;
         }
 
-        // Se for o e-mail master padrão, garante role superadmin
-        if (profile.email?.toLowerCase() === 'comercial@pedeai.com.br' || profile.email?.toLowerCase() === 'master@delivery.com') {
+        // Validação estrita do administrador inicial: somente o e-mail oficial autenticado no Firebase Auth
+        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br') {
           profile.role = 'superadmin';
         }
 
-        console.log('[Auth Flow] Perfil users/' + user.uid + ' encontrado:', {
+        console.log('[Auth Flow] Perfil users/' + user.uid + ' autenticado com sucesso:', {
           uid: profile.uid,
           email: profile.email,
           nome: profile.nome,
@@ -130,16 +131,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(profile);
         return profile;
       } else {
-        console.log('[Auth Flow] Documento users/' + user.uid + ' NÃO existe no Firestore. Verificando por e-mail...');
+        console.log('[Auth Flow] Documento users/' + user.uid + ' NÃO existe no Firestore. Verificando bootstrap...');
 
-        // Tentar encontrar perfil existente pelo e-mail
+        // Tentar encontrar perfil existente pelo e-mail verificado do Auth
         if (user.email) {
           try {
             const q = query(collection(db, 'users'), where('email', '==', user.email.toLowerCase().trim()));
             const snapEmail = await getDocs(q);
             if (!snapEmail.empty) {
               const profile = snapEmail.docs[0].data() as UserProfile;
-              // Sincronizar o uid se for diferente
+              // Sincronizar o uid oficial do Firebase Auth
               profile.uid = user.uid;
               await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
 
@@ -159,14 +160,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // Se for master padrão autenticado no Auth mas sem doc ainda
-        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br' || user.email?.toLowerCase() === 'master@delivery.com') {
+        // Bootstrap seguro do primeiro administrador Master (apenas se autenticado com comercial@pedeai.com.br no Firebase Auth)
+        if (user.email?.toLowerCase() === 'comercial@pedeai.com.br') {
           const masterProfile: UserProfile = {
             uid: user.uid,
             email: user.email,
             nome: 'Administrador Master',
             role: 'superadmin',
             ativo: true,
+            criadoEm: new Date().toISOString(),
           };
           await setDoc(doc(db, 'users', user.uid), masterProfile, { merge: true });
           localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(masterProfile));
@@ -188,39 +190,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('[Auth Flow] onAuthStateChanged disparado:', user ? `UID: ${user.uid} (${user.email})` : 'Usuário Firebase deslogado');
+      console.log('[Auth Flow] onAuthStateChanged disparado:', user ? `UID: ${user.uid} (${user.email || 'anônimo'})` : 'Usuário Firebase deslogado');
       setFirebaseUser(user);
-      if (user) {
+
+      if (user && !user.isAnonymous) {
         await loadUserProfile(user);
       } else {
-        // Se não há usuário Firebase Auth, verificar se há sessão em cache de usuário administrativo/temporário
-        const cachedRaw = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-        if (cachedRaw) {
-          try {
-            const cached = JSON.parse(cachedRaw) as UserProfile;
-            if (cached?.uid) {
-              const snap = await getDoc(doc(db, 'users', cached.uid));
-              if (snap.exists()) {
-                const fresh = snap.data() as UserProfile;
-                if (fresh.ativo === false) {
-                  localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-                  if (isMounted) setCurrentUser(null);
-                } else {
-                  if (isMounted) setCurrentUser(fresh);
-                }
-              } else {
-                localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-                if (isMounted) setCurrentUser(null);
-              }
-            }
-          } catch {
-            localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-            if (isMounted) setCurrentUser(null);
-          }
-        } else {
-          if (isMounted) setCurrentUser(null);
+        // NUNCA restaura sessão do localStorage sem sessão ativa e verificada no Firebase Auth
+        localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+        if (isMounted) {
+          setCurrentUser(null);
         }
       }
+
       if (isMounted) {
         setLoading(false);
       }
@@ -233,22 +215,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const refreshUserProfile = async (): Promise<UserProfile | null> => {
-    if (auth.currentUser) {
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
       return await loadUserProfile(auth.currentUser);
     }
-    if (currentUser?.uid) {
-      const snap = await getDoc(doc(db, 'users', currentUser.uid));
-      if (snap.exists()) {
-        const fresh = snap.data() as UserProfile;
-        if (fresh.ativo === false) {
-          await logout();
-          return null;
-        }
-        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(fresh));
-        setCurrentUser(fresh);
-        return fresh;
-      }
-    }
+    // Sem sessão Firebase Auth ativa e válida, o perfil deve ser nulo
+    setCurrentUser(null);
+    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     return null;
   };
 

@@ -12,17 +12,20 @@ import {
   AlertCircle,
   ShoppingBag,
   ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   getStoreBySlugFromFirestore,
   subscribeToStoreBySlug,
   subscribeToOrderById,
   getOrderByIdFromFirestore,
+  ensureAnonymousCustomerAuth,
 } from '../../services/firestoreService';
 import { Store, Order, OrderStatus } from '../../types';
 import { formatCurrency, formatDateTime, generateWhatsAppUrl } from '../../lib/formatters';
 import { PixPaymentModal } from '../../components/PixPaymentModal';
 import { CartProvider, useCart } from '../../services/cartContext';
+import { useAuth } from '../../services/authContext';
 import { useToast } from '../../components/Toast';
 
 export const OrderTrackingWrapper: React.FC = () => {
@@ -32,6 +35,8 @@ export const OrderTrackingWrapper: React.FC = () => {
 
   useEffect(() => {
     if (!slug) return;
+    ensureAnonymousCustomerAuth().catch(console.warn);
+
     getStoreBySlugFromFirestore(slug).then((st) => {
       setStore(st);
       setLoading(false);
@@ -69,27 +74,97 @@ export const OrderTrackingWrapper: React.FC = () => {
 const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ store, orderId }) => {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { currentUser, firebaseUser } = useAuth();
   const { addItem } = useCart();
   const [order, setOrder] = useState<Order | null>(null);
   const [loadingOrder, setLoadingOrder] = useState(true);
+  const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
-    getOrderByIdFromFirestore(orderId).then((ord) => {
-      setOrder(ord);
-      setLoadingOrder(false);
-    });
+    let isMounted = true;
+    const activeUid = firebaseUser?.uid || currentUser?.uid;
 
-    const unsub = subscribeToOrderById(orderId, (updated) => {
-      setOrder(updated);
-      setLoadingOrder(false);
-    });
-    return () => unsub();
-  }, [orderId]);
+    // Garantir sessão anônima caso o cliente acesse o link de rastreamento diretamente
+    ensureAnonymousCustomerAuth()
+      .catch((err) => console.warn('Aviso ao iniciar sessão anônima no rastreio:', err))
+      .finally(() => {
+        if (!isMounted) return;
+
+        getOrderByIdFromFirestore(orderId)
+          .then((ord) => {
+            if (!isMounted) return;
+            if (ord) {
+              const isOwner = currentUser?.storeId === ord.storeId || currentUser?.role === 'superadmin';
+              const isCustomer = activeUid && ord.customerUid === activeUid;
+              if (ord.customerUid && activeUid && !isOwner && !isCustomer) {
+                setUnauthorized(true);
+              } else {
+                setOrder(ord);
+              }
+            }
+            setLoadingOrder(false);
+          })
+          .catch((err) => {
+            if (!isMounted) return;
+            if (err?.code === 'permission-denied') {
+              setUnauthorized(true);
+            }
+            setLoadingOrder(false);
+          });
+      });
+
+    const unsub = subscribeToOrderById(
+      orderId,
+      (updated) => {
+        if (!isMounted) return;
+        if (updated) {
+          const isOwner = currentUser?.storeId === updated.storeId || currentUser?.role === 'superadmin';
+          const isCustomer = activeUid && updated.customerUid === activeUid;
+          if (updated.customerUid && activeUid && !isOwner && !isCustomer) {
+            setUnauthorized(true);
+          } else {
+            setOrder(updated);
+          }
+        }
+        setLoadingOrder(false);
+      },
+      (err) => {
+        if (!isMounted) return;
+        if (err?.code === 'permission-denied') {
+          setUnauthorized(true);
+        }
+        setLoadingOrder(false);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [orderId, firebaseUser?.uid, currentUser?.uid, currentUser?.storeId, currentUser?.role]);
 
   if (loadingOrder) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-xs font-bold text-neutral-500">
         Buscando dados do pedido no Firestore...
+      </div>
+    );
+  }
+
+  if (unauthorized) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-neutral-50">
+        <ShieldAlert className="w-16 h-16 text-rose-500 mb-3" />
+        <h2 className="text-xl font-bold text-neutral-900">Acesso Restrito ao Pedido</h2>
+        <p className="text-sm text-neutral-500 mt-1 max-w-sm">
+          Este pedido pertence a outro cliente. Por políticas de privacidade e proteção de dados, somente o titular pode acompanhá-lo.
+        </p>
+        <Link
+          to={`/${store.slug}`}
+          className="mt-4 px-4 py-2 bg-neutral-900 text-white rounded-xl text-xs font-bold"
+        >
+          Voltar ao Cardápio
+        </Link>
       </div>
     );
   }
@@ -377,10 +452,18 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
                 className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-0.5 uppercase ${
                   order.pagamento.status === 'confirmado'
                     ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
+                    : order.pagamento.status === 'informado'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-neutral-100 text-neutral-700'
                 }`}
               >
-                {order.pagamento.status === 'confirmado' ? 'Pago' : 'Aguardando Pagamento'}
+                {order.pagamento.status === 'confirmado'
+                  ? 'Pago / Confirmado'
+                  : order.pagamento.status === 'informado'
+                  ? 'Comprovante Enviado (Aguardando Loja)'
+                  : order.pagamento.status === 'na_entrega'
+                  ? 'Pagar na Entrega'
+                  : 'Aguardando Pagamento'}
               </span>
             </div>
           </div>

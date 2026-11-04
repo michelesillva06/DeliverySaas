@@ -3,7 +3,7 @@ import { Copy, Check, QrCode, MessageCircle, AlertCircle, ShieldCheck } from 'lu
 import { Order, Store } from '../types';
 import { gerarBrCode, gerarQrCodeDataUrl } from '../lib/pix';
 import { formatCurrency, generateWhatsAppUrl } from '../lib/formatters';
-import { updateOrderInFirestore } from '../services/firestoreService';
+import { updateOrderPaymentStatusInFirestore } from '../services/firestoreService';
 import { useToast } from './Toast';
 
 interface PixPaymentModalProps {
@@ -58,14 +58,13 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({ order, store, 
   };
 
   const handleAlreadyPaid = async () => {
-    // 1. Atualizar status para 'informado' no Firestore
+    // 1. Atualizar status para 'informado' no Firestore com auditoria
     try {
-      await updateOrderInFirestore(order.id, {
-        pagamento: {
-          ...order.pagamento,
-          status: 'informado',
-        },
-      });
+      await updateOrderPaymentStatusInFirestore(
+        order.id,
+        'informado',
+        'Cliente informou que realizou o pagamento Pix e solicitou conferência da loja'
+      );
     } catch (err) {
       console.error('Erro ao atualizar status do Pix no Firestore:', err);
     }

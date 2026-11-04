@@ -18,7 +18,7 @@ interface StoresFinancialTabProps {
 }
 
 export const StoresFinancialTab: React.FC<StoresFinancialTabProps> = ({ stores, orders }) => {
-  const [period, setPeriod] = useState<'hoje' | '7dias' | '30dias' | 'todos'>('mes');
+  const [period, setPeriod] = useState<'hoje' | '7dias' | '30dias' | 'todos'>('30dias');
 
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];

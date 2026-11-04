@@ -2,14 +2,26 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isSuperAdmin() {
       return request.auth != null && (
-        request.auth.token.email == "comercial@pedeai.com.br" ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
+        (request.auth.token.email != null && request.auth.token.email == "comercial@pedeai.com.br") ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (getUserData().role == 'superadmin' || getUserData().role == 'master'))
       );
     }
 
-    // Acesso irrestrito total para SuperAdmin
+    function isStoreOwner(storeId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().storeId == storeId &&
+        getUserData().ativo != false;
+    }
+
+    // Acesso irrestrito total para SuperAdmin em qualquer documento
     match /{document=**} {
       allow read, write: if isSuperAdmin();
     }
@@ -17,66 +29,176 @@ service cloud.firestore {
     // Lojas (Stores)
     match /stores/{storeId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && (isSuperAdmin() || request.auth.token.storeId == storeId);
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() || isStoreOwner(storeId);
       allow delete: if isSuperAdmin();
 
       match /products/{productId} {
         allow read: if true;
-        allow write: if request.auth != null && (isSuperAdmin() || request.auth.token.storeId == storeId);
+        allow write: if isSuperAdmin() || isStoreOwner(storeId);
       }
       match /pagamentos/{pagamentoId} {
-        allow read: if request.auth != null && (isSuperAdmin() || request.auth.token.storeId == storeId);
-        allow write: if request.auth != null && (isSuperAdmin() || request.auth.token.storeId == storeId);
+        allow read: if isSuperAdmin() || isStoreOwner(storeId);
+        allow write: if isSuperAdmin();
       }
     }
 
-    // Pedidos (Orders) - Apenas lojistas autorizados ou SuperAdmin
+    // Pedidos (Orders)
     match /orders/{orderId} {
-      allow read: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
-      allow create: if true; // Clientes podem criar pedidos
-      allow update: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
+      // Leitura permitida para SuperAdmin, lojista da loja ou o próprio cliente pelo customerUid
+      allow read: if isSuperAdmin() || 
+                    (resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
+                    (request.auth != null && resource.data.customerUid == request.auth.uid);
+      
+      // Criação permitida para SuperAdmin, lojista ou cliente autenticado com customerUid correspondente
+      allow create: if request.resource.data.storeId != null && (
+        isSuperAdmin() ||
+        isStoreOwner(request.resource.data.storeId) ||
+        (request.auth != null && request.resource.data.customerUid == request.auth.uid && request.resource.data.pagamento.status != 'confirmado')
+      );
+
+      // Atualização permitida para o lojista da loja ou SuperAdmin.
+      // Clientes autenticados podem apenas informar comprovante/anotações no pagamento,
+      // sem alterar status geral do pedido, valores financeiros, itens ou confirmar o pagamento por conta própria.
+      allow update: if isSuperAdmin() ||
+                     (resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
+                     (request.auth != null && resource.data.customerUid == request.auth.uid &&
+                      request.resource.data.pagamento.status != 'confirmado' &&
+                      !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'total', 'subtotal', 'desconto', 'taxaEntrega', 'itens', 'storeId', 'numero', 'customerUid']));
+
       allow delete: if isSuperAdmin();
     }
 
-    // Configurações de Loja
+    // Categorias do Cardápio
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
     }
 
+    // Produtos do Cardápio
     match /products/{productId} {
       allow read: if true;
-      allow write: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
     }
 
+    // Grupos de Opcionais e Complementos
     match /option_groups/{groupId} {
       allow read: if true;
-      allow write: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
     }
 
-    // Módulo de Taxa Operacional
+    // Zonas de Entrega / Bairros
+    match /delivery_zones/{zoneId} {
+      allow read: if true;
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+    }
+
+    // Cupons de Desconto
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+    }
+
+    // Entregadores (Couriers)
+    match /couriers/{courierId} {
+      allow read: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+      allow create: if isSuperAdmin() || (request.resource.data.storeId != null && isStoreOwner(request.resource.data.storeId));
+      allow update: if isSuperAdmin() || (isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId);
+      allow delete: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+    }
+
+    // Usuários da Plataforma (Perfis)
+    match /users/{userId} {
+      allow read: if isSuperAdmin() || (request.auth != null && request.auth.uid == userId);
+      // Criação: SuperAdmin ou o próprio usuário registrando perfil inicial comum sem privilégios
+      allow create: if isSuperAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        (!('role' in request.resource.data) || request.resource.data.role == 'customer') &&
+        !('storeId' in request.resource.data) &&
+        !('ativo' in request.resource.data)
+      );
+      // Atualização: SuperAdmin pode tudo; usuário comum NÃO pode alterar role, storeId, uid, email ou ativo
+      allow update: if isSuperAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'storeId', 'uid', 'email', 'ativo', 'criadoEm'])
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Configuração Global de Taxa Operacional
     match /operational_fee_config/{configId} {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin();
     }
 
+    // Lançamentos Financeiros da Taxa Operacional por Pedido
     match /operational_fee_entries/{entryId} {
-      allow read: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
-      allow create: if true;
+      allow read: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+      allow create: if request.auth != null && (isSuperAdmin() || isStoreOwner(request.resource.data.storeId));
       allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
+    // Faturas / Cobranças Operacionais
     match /operational_invoices/{invoiceId} {
-      allow read: if request.auth != null && (isSuperAdmin() || resource.data.storeId == request.auth.token.storeId);
+      allow read: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+      allow create: if isSuperAdmin();
+      // Lojista pode apenas enviar comprovante (status -> aguardando_confirmacao)
+      allow update: if isSuperAdmin() || (
+        isStoreOwner(resource.data.storeId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'comprovanteTexto', 'comprovanteEnviadoEm']) &&
+        request.resource.data.status == 'aguardando_confirmacao'
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Solicitações de Confirmação de Pagamento de Assinatura (SaaS)
+    match /saas_payment_requests/{reqId} {
+      allow read: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
+      allow create: if isSuperAdmin() || isStoreOwner(request.resource.data.storeId);
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // Histórico de Pagamentos de Assinatura SaaS
+    match /saas_payments/{paymentId} {
+      allow read: if isSuperAdmin() || isStoreOwner(resource.data.storeId);
       allow write: if isSuperAdmin();
     }
 
-    // Outros: Usuários, Logs, Config
-    match /users/{userId} {
-      allow read: if request.auth != null && (isSuperAdmin() || request.auth.uid == userId);
-      allow create, update: if isSuperAdmin() || request.auth.uid == userId;
-      allow delete: if isSuperAdmin();
+    // Configuração Global da Plataforma
+    match /saas_config/{configId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Telemetria e Métricas de Visitas do Cardápio Digital
+    match /storefront_analytics/{logId} {
+      allow read: if isSuperAdmin() || (resource.data.storeId != null && isStoreOwner(resource.data.storeId));
+      allow create: if true;
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Auditoria Administrativa do Super Admin (somente leitura para SuperAdmin, append-only)
+    match /admin_audit_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
     }
   }
 }

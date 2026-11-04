@@ -38,6 +38,8 @@ import {
   History,
   Download,
   Flame,
+  ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
@@ -72,6 +74,10 @@ import {
   updateSaasPaymentRequestStatusInFirestore,
   subscribeToStorePayments,
   subscribeToAllOrders,
+  scanLegacyPasswordsInFirestore,
+  executeLegacyPasswordCleanup,
+  PasswordCleanupScanResult,
+  PasswordCleanupExecutionResult,
 } from '../../services/firestoreService';
 import {
   subscribeToAllOperationalFeeEntries,
@@ -166,6 +172,46 @@ export const SuperAdminPage: React.FC = () => {
   const [userFormAtivo, setUserFormAtivo] = useState(true);
   const [userActionLoading, setUserActionLoading] = useState(false);
   const [userAccessCopied, setUserAccessCopied] = useState(false);
+
+  // Estados para Migração e Limpeza de Senhas Legadas (LGPD & Segurança)
+  const [migrationScan, setMigrationScan] = useState<PasswordCleanupScanResult | null>(null);
+  const [scanningMigration, setScanningMigration] = useState(false);
+  const [executingMigration, setExecutingMigration] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<PasswordCleanupExecutionResult | null>(null);
+
+  const handleScanLegacyPasswords = async () => {
+    setScanningMigration(true);
+    setMigrationResult(null);
+    try {
+      const scan = await scanLegacyPasswordsInFirestore();
+      setMigrationScan(scan);
+      const total = scan.storesWithPasswords.length + scan.usersWithPasswords.length;
+      if (total === 0) {
+        showToast('Nenhum documento com campos legados de senha foi encontrado.', 'success');
+      } else {
+        showToast(`Varredura concluída: ${total} documento(s) com campos legados identificados.`, 'info');
+      }
+    } catch (err: any) {
+      showToast('Erro ao realizar varredura: ' + (err.message || err), 'error');
+    } finally {
+      setScanningMigration(false);
+    }
+  };
+
+  const handleExecutePasswordCleanup = async () => {
+    setExecutingMigration(true);
+    try {
+      const res = await executeLegacyPasswordCleanup();
+      setMigrationResult(res);
+      const refreshedScan = await scanLegacyPasswordsInFirestore();
+      setMigrationScan(refreshedScan);
+      showToast(`Limpeza concluída! ${res.totalCleaned} documentos sanitizados com deleteField().`, 'success');
+    } catch (err: any) {
+      showToast('Erro ao executar limpeza: ' + (err.message || err), 'error');
+    } finally {
+      setExecutingMigration(false);
+    }
+  };
 
   // Estado para Criação / Reset do Usuário de Teste
   const [creatingTestStore, setCreatingTestStore] = useState(false);
@@ -523,17 +569,14 @@ export const SuperAdminPage: React.FC = () => {
         nome: cleanNome,
         role: 'owner',
         storeId: managingUserStore.id,
-        telefone: cleanTelefone,
         ativo: userFormAtivo,
         criadoEm: managingUserProfile?.criadoEm || new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
-        ...(managingUserProfile?.senha ? { senha: managingUserProfile.senha } : {}),
-        ...(managingUserProfile?.senhaTemporaria ? { senhaTemporaria: managingUserProfile.senhaTemporaria } : {}),
       };
       await saveUserProfileToFirestore(updatedProfile);
       setManagingUserProfile(updatedProfile);
 
-      showToast('Dados do usuário responsável atualizados com sucesso!', 'success');
+      showToast('Dados cadastrais do responsável atualizados com sucesso!', 'success');
     } catch (err: any) {
       console.error(err);
       showToast('Erro ao atualizar dados do usuário: ' + (err.message || err), 'error');
@@ -571,7 +614,7 @@ export const SuperAdminPage: React.FC = () => {
       showToast(
         newStatus
           ? 'Acesso ativado! O usuário agora pode entrar no painel normalmente.'
-          : 'Acesso desativado! O usuário foi bloqueado e não conseguirá entrar.',
+          : 'Acesso desativado! O usuário foi bloqueado e suas permissões foram revogadas no banco.',
         newStatus ? 'success' : 'info'
       );
     } catch (err: any) {
@@ -581,13 +624,13 @@ export const SuperAdminPage: React.FC = () => {
     }
   };
 
-  // Redefinir / Criar Nova Senha Temporária
+  // Redefinir / Provisionar Acesso Seguro
   const handleResetUserPassword = async () => {
     if (!managingUserStore) return;
     const cleanPassword = userFormNovaSenha.trim();
 
     if (!cleanPassword || cleanPassword.length < 6) {
-      showToast('A nova senha deve ter no mínimo 6 caracteres.', 'error');
+      showToast('A senha informada deve ter no mínimo 6 caracteres.', 'error');
       return;
     }
 
@@ -596,33 +639,50 @@ export const SuperAdminPage: React.FC = () => {
       const targetEmail = (userFormEmail || managingUserStore.emailResponsavel || '').trim().toLowerCase();
       const targetUid = managingUserProfile?.uid || managingUserStore.ownerUid || `user_${managingUserStore.id}`;
 
+      // Atualiza o documento sem gravar senhas em texto puro
       const updatedProfile: UserProfile = {
         uid: targetUid,
         email: targetEmail,
         nome: userFormNome || managingUserStore.nomeResponsavel || '',
         role: 'owner',
         storeId: managingUserStore.id,
-        senhaTemporaria: cleanPassword,
-        senha: cleanPassword,
         ativo: userFormAtivo,
         atualizadoEm: new Date().toISOString(),
       };
       await saveUserProfileToFirestore(updatedProfile);
       setManagingUserProfile(updatedProfile);
 
+      const secAuth = getSecondaryAuthInstance();
+      let createdInAuth = false;
+
       try {
-        const secAuth = getSecondaryAuthInstance();
         await createUserWithEmailAndPassword(secAuth, targetEmail, cleanPassword);
         await signOut(secAuth);
+        createdInAuth = true;
       } catch (authErr: any) {
-        console.warn('Firebase Auth secundário aviso:', authErr?.code);
+        await signOut(secAuth).catch(() => {});
+        if (authErr?.code === 'auth/email-already-in-use') {
+          // O usuário já existe no Firebase Authentication. Não podemos sobrescrever senha sem fluxo oficial.
+          // Dispara o envio oficial do link de redefinição por e-mail:
+          await sendPasswordResetEmail(auth, targetEmail);
+          showToast(
+            `A conta ${targetEmail} já existe no Firebase Auth. O link oficial de redefinição foi enviado com sucesso para o e-mail do lojista!`,
+            'info'
+          );
+          setUserActionLoading(false);
+          return;
+        } else {
+          throw authErr;
+        }
       }
 
-      showToast(`Nova senha definida com sucesso para ${targetEmail}!`, 'success');
+      if (createdInAuth) {
+        showToast(`Conta de acesso criada no Firebase Auth para ${targetEmail} com a senha inicial fornecida!`, 'success');
+      }
       setUserAccessCopied(false);
     } catch (err: any) {
       console.error(err);
-      showToast('Erro ao redefinir senha: ' + (err.message || err), 'error');
+      showToast('Erro no fluxo de senha: ' + (err.message || err), 'error');
     } finally {
       setUserActionLoading(false);
     }
@@ -653,7 +713,9 @@ export const SuperAdminPage: React.FC = () => {
     const origin = window.location.origin;
     const loginUrl = `${origin}/#/entrar`;
     const targetEmail = userFormEmail || managingUserStore.emailResponsavel || '';
-    const senhaTexto = userFormNovaSenha || managingUserProfile?.senhaTemporaria || '(A senha definida no cadastro)';
+    const senhaTexto = userFormNovaSenha.trim()
+      ? `${userFormNovaSenha.trim()} (alterar no primeiro acesso)`
+      : `Definida no cadastro ou via link de recuperação`;
 
     const text = `🍽️ *ACESSO AO PAINEL DO DELIVERY*\n\n` +
       `*Estabelecimento:* ${managingUserStore.nome}\n` +
@@ -662,7 +724,7 @@ export const SuperAdminPage: React.FC = () => {
       `*E-mail de Acesso:* ${targetEmail}\n` +
       `*Senha de Acesso:* ${senhaTexto}\n` +
       `*Status da Conta:* ${userFormAtivo ? 'Ativa ✅' : 'Desativada ⛔'}\n\n` +
-      `_Acesse o painel para gerenciar seus pedidos, cardápio e entregas._`;
+      `💡 _Para segurança do seu estabelecimento, caso esqueça a senha, utilize a opção 'Esqueci minha senha' na tela de login._`;
 
     navigator.clipboard.writeText(text);
     setUserAccessCopied(true);
@@ -702,8 +764,6 @@ export const SuperAdminPage: React.FC = () => {
         role: 'owner',
         storeId,
         telefone: '5592999999999',
-        senha: testSenha,
-        senhaTemporaria: testSenha,
         ativo: true,
         criadoEm: targetStore?.criadoEm || new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
@@ -1754,6 +1814,76 @@ export const SuperAdminPage: React.FC = () => {
                 </div>
               </form>
             )}
+
+            {/* CARD DE MIGRAÇÃO: LIMPEZA DE SENHAS LEGADAS (LGPD & SEGURANÇA) */}
+            <div className="mt-8 pt-6 border-t border-neutral-200 space-y-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-sm font-black text-neutral-900">
+                  Segurança & LGPD: Varredura de Senhas Legadas
+                </h3>
+              </div>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                O Firebase Authentication gerencia as credenciais com criptografia segura.
+                Esta ferramenta localiza e remove com segurança campos de texto puro (<code className="font-mono text-rose-600">senha</code> e <code className="font-mono text-rose-600">senhaTemporaria</code>) que tenham sido gravados em documentos antigos do Firestore via <code className="font-mono text-neutral-800">deleteField()</code>, sem afetar o login dos lojistas ou os dados dos pedidos.
+              </p>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleScanLegacyPasswords}
+                  disabled={scanningMigration}
+                  className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${scanningMigration ? 'animate-spin' : ''}`} />
+                  <span>{scanningMigration ? 'Verificando banco...' : '1. Varrer Senhas no Firestore'}</span>
+                </button>
+
+                {migrationScan && (migrationScan.storesWithPasswords.length > 0 || migrationScan.usersWithPasswords.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleExecutePasswordCleanup}
+                    disabled={executingMigration}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{executingMigration ? 'Sanitizando...' : '2. Executar Limpeza Segura (deleteField)'}</span>
+                  </button>
+                )}
+              </div>
+
+              {migrationScan && (
+                <div className="p-3.5 rounded-xl border border-neutral-200 bg-neutral-50 text-xs space-y-2">
+                  <div className="font-bold text-neutral-800 flex items-center justify-between">
+                    <span>Resultado da Varredura:</span>
+                    <span className="text-[11px] font-normal text-neutral-500">
+                      {migrationScan.storesWithPasswords.length + migrationScan.usersWithPasswords.length === 0
+                        ? '✅ Base 100% segura'
+                        : '⚠️ Campos identificados'}
+                    </span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-neutral-600">
+                    <li>
+                      Lojas com senhas legadas:{' '}
+                      <strong className={migrationScan.storesWithPasswords.length > 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                        {migrationScan.storesWithPasswords.length}
+                      </strong>
+                    </li>
+                    <li>
+                      Usuários com senhas legadas:{' '}
+                      <strong className={migrationScan.usersWithPasswords.length > 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                        {migrationScan.usersWithPasswords.length}
+                      </strong>
+                    </li>
+                  </ul>
+                  {migrationResult && (
+                    <div className="p-2.5 bg-emerald-100/70 border border-emerald-200 text-emerald-900 rounded-lg font-bold text-[11px]">
+                      Sucesso: {migrationResult.totalCleaned} documento(s) sanitizado(s) com deleteField()!
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -2437,22 +2567,26 @@ export const SuperAdminPage: React.FC = () => {
                   type="button"
                   onClick={handleResetUserPassword}
                   disabled={userActionLoading || !userFormNovaSenha.trim()}
-                  className="px-3 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 flex-shrink-0 disabled:opacity-50 shadow-xs"
+                  className="px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 flex-shrink-0 disabled:opacity-50 shadow-xs"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span>Salvar Senha</span>
+                  <span>Provisionar / Resetar</span>
                 </button>
               </div>
+
+              <p className="text-[11px] text-neutral-500 leading-tight">
+                💡 Se a conta já existir no Firebase Auth, o sistema enviará automaticamente o link oficial do Firebase para o e-mail do lojista, preservando a segurança criptográfica.
+              </p>
 
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleSendResetPasswordEmail}
                   disabled={userActionLoading}
-                  className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                 >
-                  <Send className="w-3.5 h-3.5 text-neutral-600" />
-                  <span>Enviar Link por E-mail</span>
+                  <Send className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Enviar Link Oficial por E-mail</span>
                 </button>
 
                 <button

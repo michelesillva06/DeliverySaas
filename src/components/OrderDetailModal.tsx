@@ -373,6 +373,19 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                 <span>{formatCurrency(order.total)}</span>
               </div>
 
+              {/* Alerta de Pedido Concluído com Pagamento Pendente */}
+              {(order.status === 'entregue' || (order.tipo === 'retirada' && order.status === 'pronto')) && order.pagamento.status !== 'confirmado' && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs space-y-1">
+                  <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                    Pedido concluído com Pagamento Pendente
+                  </p>
+                  <p className="text-[11px] text-amber-800">
+                    A conclusão do pedido é independente do pagamento. Se você já recebeu o valor (dinheiro, máquina de cartão ou comprovante Pix), clique no botão abaixo para registrar a confirmação manual.
+                  </p>
+                </div>
+              )}
+
               {/* Detalhe do Pagamento */}
               <div className="mt-3 pt-3 border-t border-neutral-200 flex items-center justify-between">
                 <div>
@@ -383,7 +396,9 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                       : order.pagamento.forma === 'dinheiro'
                       ? '💵 Dinheiro'
                       : order.pagamento.forma === 'cartao_entrega'
-                      ? '💳 Cartão na Entrega'
+                      ? order.tipo === 'entrega'
+                        ? '💳 Cartão na Entrega'
+                        : '💳 Cartão na Retirada'
                       : '💬 Combinar no WhatsApp'}
                   </span>
                   {order.pagamento.forma === 'dinheiro' && order.pagamento.troco && (
@@ -402,7 +417,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                       className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                     >
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Confirmar Pagamento Pix</span>
+                      <span>Confirmar Pix Manualmente</span>
                     </button>
                   )}
                   {order.pagamento.status === 'confirmado' && (
@@ -411,15 +426,14 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                       Pago / Confirmado
                     </span>
                   )}
-                  {(order.pagamento.forma === 'dinheiro' || order.pagamento.forma === 'cartao_entrega') &&
-                    order.pagamento.status !== 'confirmado' && (
-                      <button
-                        onClick={handleMarkPaymentReceived}
-                        className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                      >
-                        Marcar como Recebido
-                      </button>
-                    )}
+                  {order.pagamento.forma !== 'pix' && order.pagamento.status !== 'confirmado' && (
+                    <button
+                      onClick={handleMarkPaymentReceived}
+                      className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Confirmar Pagamento Manual
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

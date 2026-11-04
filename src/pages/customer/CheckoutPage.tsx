@@ -24,7 +24,7 @@ import {
 import { Store, DeliveryZone, PaymentMethod, PaymentStatus, Order } from '../../types';
 import { useCart, CartProvider } from '../../services/cartContext';
 import { useAuth } from '../../services/authContext';
-import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl } from '../../lib/formatters';
+import { formatCurrency, formatPhone, isStoreOpen, generateWhatsAppUrl, getPaymentMethodLabel } from '../../lib/formatters';
 import { limparObjeto } from '../../lib/utils';
 import { useToast } from '../../components/Toast';
 import { validateAndSanitizeCheckout } from '../../schemas/checkoutSchema';
@@ -272,17 +272,19 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       clearCart();
 
       // Montar mensagem para o WhatsApp da loja
+      const paymentLabel = getPaymentMethodLabel(order.pagamento.forma, order.tipo);
       let whatsMsg = `*🍟 NOVO PEDIDO #${order.numero}*\n`;
+      whatsMsg += `*Loja:* ${store.nome}\n`;
       whatsMsg += `*Cliente:* ${order.cliente.nome}\n`;
       whatsMsg += `*Telefone:* ${formatPhone(order.cliente.telefone)}\n`;
-      whatsMsg += `*Tipo:* ${order.tipo === 'entrega' ? '🛵 Entrega' : '🛍️ Retirada no Balcão'}\n`;
-      if (order.endereco) {
+      whatsMsg += `*Modalidade:* ${order.tipo === 'entrega' ? '🛵 Entrega em Domicílio' : '🛍️ Retirada no Balcão'}\n`;
+      if (order.tipo === 'entrega' && order.endereco) {
         whatsMsg += `*Endereço:* ${order.endereco.rua}, ${order.endereco.numero} - ${order.endereco.bairro}`;
         if (order.endereco.complemento) whatsMsg += ` (${order.endereco.complemento})`;
         if (order.endereco.referencia) whatsMsg += ` - Ref: ${order.endereco.referencia}`;
         whatsMsg += `\n`;
       }
-      whatsMsg += `\n*ITENS:* \n`;
+      whatsMsg += `\n*PRODUTOS SOLICITADOS:*\n`;
       order.itens.forEach((it) => {
         whatsMsg += `• ${it.qtd}x ${it.nome} (${formatCurrency(it.totalItem)})\n`;
         if (it.complementos && it.complementos.length > 0) {
@@ -297,32 +299,40 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       whatsMsg += `\n*Subtotal:* ${formatCurrency(order.subtotal)}\n`;
       if (order.desconto) whatsMsg += `*Desconto:* -${formatCurrency(order.desconto)}\n`;
       if (order.taxaEntrega) whatsMsg += `*Taxa de Entrega:* ${formatCurrency(order.taxaEntrega)}\n`;
-      whatsMsg += `*TOTAL:* *${formatCurrency(order.total)}*\n`;
-      whatsMsg += `*Pagamento:* ${
+      whatsMsg += `*TOTAL A PAGAR:* *${formatCurrency(order.total)}*\n`;
+      whatsMsg += `*Forma de Pagamento:* ${paymentLabel}${
+        order.pagamento.troco ? ` (Troco para ${formatCurrency(order.pagamento.troco)})` : ''
+      }\n`;
+      whatsMsg += `*Situação do Pagamento:* ${
         order.pagamento.forma === 'pix'
-          ? 'Pix'
+          ? 'Pendente (Aguardando conferência do Pix)'
           : order.pagamento.forma === 'cartao_entrega'
-          ? 'Cartão na Entrega'
+          ? order.tipo === 'entrega'
+            ? 'Pagar com cartão na entrega'
+            : 'Pagar com cartão na retirada'
           : order.pagamento.forma === 'dinheiro'
-          ? `Dinheiro${order.pagamento.troco ? ` (Troco para ${formatCurrency(order.pagamento.troco)})` : ''}`
-          : 'Combinar no WhatsApp'
+          ? 'Pagar em dinheiro na entrega/retirada'
+          : 'A combinar no WhatsApp'
       }\n\n`;
-      whatsMsg += `*Acompanhe o pedido em tempo real:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
+      whatsMsg += `*Acompanhe seu pedido em tempo real:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
-      // Abrir WhatsApp da loja em nova aba e navegar para acompanhamento
-      if (store.whatsapp) {
+      // Tentar abrir WhatsApp da loja apenas se o número for válido e configurado
+      const storePhoneDigits = (store.whatsapp || '').replace(/\D/g, '');
+      if (storePhoneDigits && storePhoneDigits.length >= 10) {
         try {
           window.open(generateWhatsAppUrl(store.whatsapp, whatsMsg), '_blank');
         } catch (e) {
-          console.warn('Popup do WhatsApp bloqueado pelo navegador:', e);
+          console.warn('Redirecionamento ao WhatsApp bloqueado pelo navegador:', e);
         }
+      } else {
+        showToast('Pedido recebido pela loja! WhatsApp não configurado.', 'info');
       }
 
-      showToast(`Pedido #${order.numero} gravado com sucesso!`, 'success');
+      showToast(`Pedido #${order.numero} confirmado com sucesso!`, 'success');
       navigate(`/${store.slug}/pedido/${order.id}`);
     } catch (err: any) {
-      console.error('Erro ao gravar pedido no Firestore:', err);
-      showToast(err?.message || 'Erro ao processar pedido no Firestore. Tente novamente.', 'error');
+      console.error('Erro ao registrar pedido:', err);
+      showToast(err?.message || 'Erro ao processar pedido no sistema. Tente novamente.', 'error');
       setIsSubmitting(false);
     }
   };
@@ -541,8 +551,8 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                   <div className="flex items-center gap-3">
                     <QrCode className="w-5 h-5 text-teal-600" />
                     <div>
-                      <p className="text-sm font-bold text-neutral-900">Pix (Copia e Cola + QR Code)</p>
-                      <p className="text-xs text-neutral-500">Pague pelo app do seu banco com rapidez</p>
+                      <p className="text-sm font-bold text-neutral-900">Pix com QR Code e Copia e Cola</p>
+                      <p className="text-xs text-neutral-500">Pague pelo aplicativo do seu banco com rapidez</p>
                     </div>
                   </div>
                   <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
@@ -563,8 +573,14 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                   <div className="flex items-center gap-3">
                     <CreditCard className="w-5 h-5 text-indigo-600" />
                     <div>
-                      <p className="text-sm font-bold text-neutral-900">Cartão na Entrega</p>
-                      <p className="text-xs text-neutral-500">O entregador levará a maquininha (Débito/Crédito)</p>
+                      <p className="text-sm font-bold text-neutral-900">
+                        {orderType === 'entrega' ? 'Cartão na Entrega' : 'Cartão na Retirada'}
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        {orderType === 'entrega'
+                          ? 'O entregador levará a maquininha (Débito/Crédito)'
+                          : 'Pague na maquininha ao retirar seu pedido no balcão'}
+                      </p>
                     </div>
                   </div>
                 </label>
@@ -583,8 +599,8 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
                     <div className="flex items-center gap-3">
                       <DollarSign className="w-5 h-5 text-emerald-600" />
                       <div>
-                        <p className="text-sm font-bold text-neutral-900">Dinheiro</p>
-                        <p className="text-xs text-neutral-500">Pagamento em cédulas na entrega ou retirada</p>
+                        <p className="text-sm font-bold text-neutral-900">Dinheiro em Cédulas</p>
+                        <p className="text-xs text-neutral-500">Pagamento em espécie na entrega ou retirada</p>
                       </div>
                     </div>
                   </label>
@@ -652,20 +668,24 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
               </div>
             </div>
 
-            {/* Termo de Consentimento LGPD */}
-            <label className="flex items-start gap-2.5 text-xs text-neutral-500 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                required
-                checked={lgpdConsent}
-                onChange={(e) => setLgpdConsent(e.target.checked)}
-                className="mt-0.5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900"
-              />
-              <span>
-                Concordo com o compartilhamento dos meus dados (nome, telefone e endereço) estritamente para o
-                processamento e entrega deste pedido pelo estabelecimento, de acordo com a LGPD.
-              </span>
-            </label>
+            {/* Aviso Informativo de Privacidade LGPD */}
+            <div className="p-3 bg-neutral-50 border border-neutral-200/70 rounded-xl text-xs text-neutral-600 space-y-1">
+              <p className="font-bold text-neutral-800 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                Uso de dados pessoais para entrega do pedido
+              </p>
+              <p className="text-[11px] leading-relaxed">
+                Seus dados (nome, telefone e endereço) são utilizados exclusivamente para o processamento, preparo e entrega deste pedido pelo estabelecimento, em conformidade com a LGPD. Consulte nossa{' '}
+                <a
+                  href="/#/privacidade"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neutral-900 font-bold underline hover:text-emerald-700"
+                >
+                  Política de Privacidade
+                </a>.
+              </p>
+            </div>
 
             {/* Botão Confirmar Pedido */}
             <button
@@ -677,7 +697,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
               {isSubmitting ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Gravando pedido no Firestore...</span>
+                  <span>Registrando seu pedido...</span>
                 </div>
               ) : (
                 <>

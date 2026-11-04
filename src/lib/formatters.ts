@@ -472,3 +472,29 @@ export function notificarEntregadorWhatsApp(
   return true;
 }
 
+/**
+ * Retorna o rótulo do meio de pagamento adaptado para Entrega ou Retirada
+ */
+export function getPaymentMethodLabel(forma: string, orderType: 'entrega' | 'retirada' = 'entrega'): string {
+  if (forma === 'pix') return 'Pix (QR Code / Copia e Cola)';
+  if (forma === 'cartao_entrega') {
+    return orderType === 'entrega' ? 'Cartão na Entrega' : 'Cartão na Retirada';
+  }
+  if (forma === 'dinheiro') return 'Dinheiro em Espécie';
+  return 'Combinar no WhatsApp';
+}
+
+/**
+ * Retorna a descrição do meio de pagamento adaptada para Entrega ou Retirada
+ */
+export function getPaymentMethodDescription(forma: string, orderType: 'entrega' | 'retirada' = 'entrega'): string {
+  if (forma === 'pix') return 'Pague pelo app do seu banco com rapidez (Copia e Cola + QR Code)';
+  if (forma === 'cartao_entrega') {
+    return orderType === 'entrega'
+      ? 'O entregador levará a maquininha (Débito/Crédito)'
+      : 'Pague na maquininha ao retirar seu pedido no balcão (Débito/Crédito)';
+  }
+  if (forma === 'dinheiro') return 'Pagamento em cédulas na entrega ou retirada';
+  return 'Combine a forma de pagamento diretamente no chat';
+}
+

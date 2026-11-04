@@ -5,8 +5,9 @@ import { ActiveStoreProvider, useActiveStore } from './services/activeStoreConte
 import { ToastProvider } from './components/Toast';
 import { isMasterRole } from './types';
 
-// Landing Page
+// Landing Page & Public Pages
 import { LandingHomePage } from './pages/LandingHomePage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 
 // Customer Pages
 import { StorefrontWrapper } from './pages/customer/StorefrontPage';
@@ -95,8 +96,9 @@ export default function App() {
         <ActiveStoreProvider>
           <ToastProvider>
           <Routes>
-            {/* Página Inicial (Landing Page Oficial do SaaS - NUNCA abre loja) */}
+            {/* Página Inicial e Páginas Institucionais */}
             <Route path="/" element={<LandingHomePage />} />
+            <Route path="/privacidade" element={<PrivacyPolicyPage />} />
 
             {/* Rotas de Autenticação */}
             <Route path="/entrar" element={<LoginPage />} />

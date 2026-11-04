@@ -22,7 +22,7 @@ import {
   ensureAnonymousCustomerAuth,
 } from '../../services/firestoreService';
 import { Store, Order, OrderStatus } from '../../types';
-import { formatCurrency, formatDateTime, generateWhatsAppUrl } from '../../lib/formatters';
+import { formatCurrency, formatDateTime, generateWhatsAppUrl, getPaymentMethodLabel } from '../../lib/formatters';
 import { PixPaymentModal } from '../../components/PixPaymentModal';
 import { CartProvider, useCart } from '../../services/cartContext';
 import { useAuth } from '../../services/authContext';
@@ -146,7 +146,7 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
   if (loadingOrder) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-xs font-bold text-neutral-500">
-        Buscando dados do pedido no Firestore...
+        Carregando acompanhamento do pedido...
       </div>
     );
   }
@@ -226,12 +226,34 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
     navigate(`/${store.slug}`);
   };
 
-  // WhatsApp para tirar dúvidas sobre o pedido
+  // WhatsApp para enviar resumo do pedido ou tirar dúvidas
   const handleOpenWhatsApp = () => {
-    const text = `Olá! Gostaria de falar sobre o meu Pedido #${order.numero} (${order.cliente.nome}).`;
-    if (store.whatsapp) {
-      window.open(generateWhatsAppUrl(store.whatsapp, text), '_blank');
+    if (!store.whatsapp) {
+      showToast('O estabelecimento não possui número de WhatsApp cadastrado.', 'info');
+      return;
     }
+
+    let text = `*🍟 RESUMO DO PEDIDO #${order.numero}*\n`;
+    text += `*Loja:* ${store.nome}\n`;
+    text += `*Cliente:* ${order.cliente.nome}\n`;
+    text += `*Telefone:* ${order.cliente.telefone}\n`;
+    text += `*Modalidade:* ${order.tipo === 'entrega' ? '🛵 Entrega' : '🛍️ Retirada no Balcão'}\n`;
+    if (order.tipo === 'entrega' && order.endereco) {
+      text += `*Endereço:* ${order.endereco.rua}, ${order.endereco.numero} - ${order.endereco.bairro}\n`;
+    }
+    text += `\n*Itens:*\n`;
+    order.itens.forEach((it) => {
+      text += `• ${it.qtd}x ${it.nome} (${formatCurrency(it.totalItem)})\n`;
+      if (it.complementos && it.complementos.length > 0) {
+        it.complementos.forEach((c) => {
+          text += `  ↳ + ${c.nome} (${formatCurrency(c.preco * it.qtd)})\n`;
+        });
+      }
+    });
+    text += `\n*TOTAL:* *${formatCurrency(order.total)}*\n`;
+    text += `*Link de Acompanhamento:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
+
+    window.open(generateWhatsAppUrl(store.whatsapp, text), '_blank');
   };
 
   return (
@@ -440,13 +462,7 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
             <div>
               <p className="text-neutral-400 font-bold uppercase text-[10px]">Forma de Pagamento</p>
               <p className="font-bold text-neutral-800 text-sm capitalize">
-                {order.pagamento.forma === 'pix'
-                  ? 'Pix'
-                  : order.pagamento.forma === 'cartao_entrega'
-                  ? 'Cartão na Entrega'
-                  : order.pagamento.forma === 'dinheiro'
-                  ? 'Dinheiro'
-                  : 'Combinar no WhatsApp'}
+                {getPaymentMethodLabel(order.pagamento.forma, order.tipo)}
               </p>
               <span
                 className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-0.5 uppercase ${

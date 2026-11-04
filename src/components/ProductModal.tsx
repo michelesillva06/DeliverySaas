@@ -63,11 +63,19 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     const errs: string[] = [];
     activeGroups.forEach((g) => {
       const selectedCount = (selections[g.id] || []).length;
-      if (g.obrigatorio && selectedCount < g.min) {
-        errs.push(`Escolha ao menos ${g.min} opção em "${g.nome}".`);
-      }
-      if (selectedCount > g.max) {
-        errs.push(`Máximo de ${g.max} opções em "${g.nome}".`);
+      const min = typeof g.min === 'number' ? g.min : 0;
+      const max = typeof g.max === 'number' && g.max > 0 ? g.max : 1;
+      const isObrigatorio = g.obrigatorio || min > 0;
+      const requiredMin = isObrigatorio ? Math.max(1, min) : 0;
+
+      if (selectedCount < requiredMin) {
+        if (requiredMin === 1 && max === 1) {
+          errs.push(`Por favor, escolha 1 opção no grupo "${g.nome}".`);
+        } else {
+          errs.push(`Por favor, escolha ao menos ${requiredMin} opção(ões) no grupo "${g.nome}".`);
+        }
+      } else if (selectedCount > max) {
+        errs.push(`Você pode escolher no máximo ${max} opção(ões) no grupo "${g.nome}".`);
       }
     });
     return { isValid: errs.length === 0, errors: errs };
@@ -181,6 +189,22 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {activeGroups.map((group) => {
             const currentSelected = selections[group.id] || [];
             const isSingle = group.max === 1;
+            const min = typeof group.min === 'number' ? group.min : 0;
+            const max = typeof group.max === 'number' && group.max > 0 ? group.max : 1;
+            const isObrigatorio = group.obrigatorio || min > 0;
+
+            let ruleLabelText = '';
+            if (!isObrigatorio) {
+              if (max === 1) ruleLabelText = 'Opcional — escolha até 1 opção';
+              else ruleLabelText = `Opcional — escolha até ${max} opções (${currentSelected.length}/${max})`;
+            } else {
+              if (min === 1 && max === 1) ruleLabelText = 'Escolha 1 opção';
+              else if (min === max && max > 1) ruleLabelText = `Obrigatório — escolha ${max} opções (${currentSelected.length}/${max})`;
+              else {
+                const requiredMin = min > 0 ? min : 1;
+                ruleLabelText = `Obrigatório — escolha de ${requiredMin} até ${max} opções (${currentSelected.length}/${max})`;
+              }
+            }
 
             return (
               <div key={group.id} className="pt-4 first:pt-0">
@@ -188,16 +212,14 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   <div>
                     <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-1.5">
                       {group.nome}
-                      {group.obrigatorio && (
+                      {isObrigatorio && (
                         <span className="text-[10px] uppercase font-extrabold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
                           Obrigatório
                         </span>
                       )}
                     </h3>
-                    <p className="text-xs text-neutral-500">
-                      {isSingle
-                        ? 'Escolha 1 opção'
-                        : `Escolha de ${group.min} até ${group.max} opções (${currentSelected.length}/${group.max})`}
+                    <p className="text-xs font-medium text-neutral-500">
+                      {ruleLabelText}
                     </p>
                   </div>
                 </div>

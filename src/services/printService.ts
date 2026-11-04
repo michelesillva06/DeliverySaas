@@ -359,9 +359,10 @@ export function gerarHtmlEntrega(order: Order, store: Partial<Store>, largura: P
       <div style="font-size: 11px;">Status: <strong>${isPago ? '✅ PAGO (CONFIRMADO)' : '⏳ AGUARDANDO PAGAMENTO'}</strong></div>
     `;
   } else if (order.pagamento.forma === 'cartao_entrega') {
+    const isEntrega = order.tipo === 'entrega';
     pagamentoDetalhe = `
-      <div class="negrito">FORMA: CARTÃO NA ENTREGA</div>
-      <div style="font-size: 11px;">⚠️ Levar maquininha de cartão</div>
+      <div class="negrito">FORMA: ${isEntrega ? 'CARTÃO NA ENTREGA' : 'CARTÃO NA RETIRADA'}</div>
+      <div style="font-size: 11px;">⚠️ ${isEntrega ? 'Levar maquininha de cartão' : 'Cobrar na maquininha ao retirar'}</div>
     `;
   } else {
     pagamentoDetalhe = `<div class="negrito">FORMA: COMBINAR VIA WHATSAPP</div>`;

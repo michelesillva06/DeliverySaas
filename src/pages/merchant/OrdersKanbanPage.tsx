@@ -393,11 +393,18 @@ const OrderCard: React.FC<OrderCardProps> = ({
         </div>
       )}
 
-      {/* Alertas Rápidos (Pix aguardando confirmação) */}
+      {/* Alertas Rápidos (Pix ou Pagamento Pendente em Pedido Concluído) */}
       {isPixWaiting && (
-        <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 p-1 rounded">
+        <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 p-1 rounded border border-amber-200">
           <QrCode className="w-3.5 h-3.5" />
           <span>Aguardando Pix</span>
+        </div>
+      )}
+
+      {(order.status === 'entregue' || (order.tipo === 'retirada' && order.status === 'pronto')) && order.pagamento.status !== 'confirmado' && (
+        <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 p-1 rounded border border-rose-200">
+          <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+          <span>⚠️ Pagamento Pendente</span>
         </div>
       )}
 

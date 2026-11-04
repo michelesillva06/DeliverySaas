@@ -320,15 +320,15 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       // Tentar abrir WhatsApp da loja
       const storePhoneDigits = (store.whatsapp || '').replace(/\D/g, '');
       if (storePhoneDigits && storePhoneDigits.length >= 10) {
-        try {
-          window.open(generateWhatsAppUrl(store.whatsapp, whatsMsg), '_blank');
-        } catch (e) {
-          console.warn('Redirecionamento ao WhatsApp bloqueado pelo navegador:', e);
-        }
+        // Usa window.location.href para navegar na mesma aba, evitando bloqueio de pop-up
+        window.location.href = generateWhatsAppUrl(store.whatsapp, whatsMsg);
       }
 
       showToast(`Pedido #${order.numero} confirmado com sucesso!`, 'success');
-      navigate(`/${store.slug}/pedido/${order.id}`);
+      // A navegação acima deve abrir o WhatsApp, se não abrir, o cliente ainda está na página.
+      // Adicionamos um pequeno delay antes de navegar para a página de acompanhamento
+      // para permitir que o WhatsApp seja aberto.
+      setTimeout(() => navigate(`/${store.slug}/pedido/${order.id}`), 1000);
     } catch (err: any) {
       console.error('Erro ao registrar pedido:', err);
       let friendlyError = 'Não foi possível registrar seu pedido neste momento.';

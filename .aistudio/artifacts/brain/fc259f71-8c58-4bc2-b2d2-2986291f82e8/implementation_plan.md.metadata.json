@@ -1,0 +1,6 @@
+{
+  "summary": "This plan outlines the steps to:\n1. Fix the total discrepancy (R$ 0,99 fee inclusion in server-side calculations).\n2. Update WhatsApp redirection to avoid popups and provide an explicit link.\n3. Update UI across all pages (Checkout, Tracking, Comanda, Admin) to reflect the new commercial model (0,00 implantação/mensalidade, 0,99 platform service fee).\n4. Refactor the financial settlement/repasse service to reflect the new daily-based default and frequency-based cycles.",
+  "updatedAt": "2026-11-04T21:07:27.401380423Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

@@ -254,7 +254,7 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
     text += `\n*TOTAL:* *${formatCurrency(order.total)}*\n`;
     text += `*Link de Acompanhamento:*\n${window.location.origin}/#/${store.slug}/pedido/${order.id}`;
 
-    window.open(generateWhatsAppUrl(store.whatsapp, text), '_blank');
+    window.location.href = generateWhatsAppUrl(store.whatsapp, text);
   };
 
   return (

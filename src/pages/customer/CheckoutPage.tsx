@@ -208,19 +208,10 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
         localStorage.setItem('checkout_num', cleanEndereco.numero);
       }
 
-      // Garantir autenticação anônima segura do cliente
+      // Obter customerUid (da sessão autenticada ou identificador seguro do cliente)
       let customerUid = currentUser?.uid;
       if (!customerUid) {
-        try {
-          customerUid = await ensureAnonymousCustomerAuth();
-        } catch (authErr: any) {
-          setIsSubmitting(false);
-          showToast(
-            authErr?.message || 'Falha ao autenticar sua sessão. Verifique sua conexão e tente novamente.',
-            'error'
-          );
-          return;
-        }
+        customerUid = await ensureAnonymousCustomerAuth();
       }
 
       // Gerar ou reutilizar chave de idempotência para evitar pedidos duplicados

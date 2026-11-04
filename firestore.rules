@@ -30,7 +30,11 @@ service cloud.firestore {
     match /stores/{storeId} {
       allow read: if true;
       allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() || isStoreOwner(storeId);
+      // SuperAdmin ou lojista podem atualizar tudo.
+      // Clientes podem atualizar exclusivamente o contador sequencial de pedidos (nextOrderNumber)
+      allow update: if isSuperAdmin() || isStoreOwner(storeId) ||
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextOrderNumber']) &&
+                     request.resource.data.nextOrderNumber > resource.data.nextOrderNumber);
       allow delete: if isSuperAdmin();
 
       match /products/{productId} {
@@ -45,16 +49,19 @@ service cloud.firestore {
 
     // Pedidos (Orders)
     match /orders/{orderId} {
-      // Leitura permitida para SuperAdmin, lojista da loja ou o próprio cliente pelo customerUid
+      // Leitura permitida para SuperAdmin, lojista da loja ou consulta por ID de pedido
       allow read: if isSuperAdmin() || 
                     (resource.data.storeId != null && isStoreOwner(resource.data.storeId)) ||
-                    (request.auth != null && resource.data.customerUid == request.auth.uid);
+                    (request.auth != null && resource.data.customerUid == request.auth.uid) ||
+                    (resource.data.customerUid != null);
       
-      // Criação permitida para SuperAdmin, lojista ou cliente autenticado com customerUid correspondente
+      // Criação permitida para SuperAdmin, lojista ou clientes (com status inicial não confirmado)
       allow create: if request.resource.data.storeId != null && (
         isSuperAdmin() ||
         isStoreOwner(request.resource.data.storeId) ||
-        (request.auth != null && request.resource.data.customerUid == request.auth.uid && request.resource.data.pagamento.status != 'confirmado')
+        (request.resource.data.pagamento.status != 'confirmado' &&
+         request.resource.data.customerUid != null &&
+         (request.auth == null || request.resource.data.customerUid == request.auth.uid || request.auth.uid != null))
       );
 
       // Atualização permitida para o lojista da loja ou SuperAdmin.

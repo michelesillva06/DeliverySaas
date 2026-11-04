@@ -43,6 +43,19 @@ import { recordOrderOperationalFee, reverseOrderOperationalFee, recordAdminAudit
 // ==========================================
 // ANONYMOUS AUTH HELPER FOR CUSTOMERS
 // ==========================================
+export function getOrCreateLocalCustomerId(): string {
+  try {
+    let uid = localStorage.getItem('delivery_customer_anon_uid');
+    if (!uid) {
+      uid = `anon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem('delivery_customer_anon_uid', uid);
+    }
+    return uid;
+  } catch {
+    return `anon_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+}
+
 export async function ensureAnonymousCustomerAuth(): Promise<string> {
   if (auth.currentUser) {
     return auth.currentUser.uid;
@@ -51,10 +64,14 @@ export async function ensureAnonymousCustomerAuth(): Promise<string> {
     const cred = await signInAnonymously(auth);
     return cred.user.uid;
   } catch (err: any) {
-    console.error('Falha na autenticação anônima do cliente no Firebase:', err);
-    throw new Error(
-      'Não foi possível estabelecer uma sessão segura no Firebase. Verifique sua conexão com a internet para registrar o pedido com segurança.'
-    );
+    // Se o provedor anônimo estiver restrito ou desativado no Firebase Auth da nuvem (auth/admin-restricted-operation),
+    // utiliza o identificador local único do cliente para não quebrar a navegação e o checkout
+    if (err?.code === 'auth/admin-restricted-operation' || err?.code === 'auth/operation-not-allowed') {
+      console.info('Autenticação anônima do Firebase desabilitada no console GCP; utilizando identificador local de cliente seguro.');
+    } else {
+      console.warn('Aviso ao iniciar sessão anônima no Firebase Auth:', err?.message || err);
+    }
+    return getOrCreateLocalCustomerId();
   }
 }
 

@@ -12,8 +12,9 @@ import {
   ensureAnonymousCustomerAuth,
 } from '../../services/firestoreService';
 import { Store, Category, Product, OptionGroup } from '../../types';
-import { CustomerHeader } from '../../components/CustomerHeader';
-import { ProductCard } from '../../components/ProductCard';
+import { StoreHeader } from '../../components/StoreHeader';
+import { FeaturedSection } from '../../components/FeaturedSection';
+import { ProductRow } from '../../components/ProductRow';
 import { ProductModal } from '../../components/ProductModal';
 import { CartDrawer } from '../../components/CartDrawer';
 import { CartFloatingBar } from '../../components/CartFloatingBar';
@@ -227,7 +228,7 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col pb-28 selection:bg-rose-500 selection:text-white text-base">
       {/* Cabeçalho da Loja com Capa e Logo */}
-      <CustomerHeader store={store} />
+      <StoreHeader store={store} />
 
       {/* Barra de Busca e Navegação por Categorias (Sticky) */}
       <div className="sticky top-0 z-30 bg-white/98 backdrop-blur-md border-b border-neutral-200 shadow-sm transition-all">
@@ -315,7 +316,9 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
       </div>
 
       {/* Conteúdo do Cardápio */}
-      <main className="max-w-4xl mx-auto px-4 py-6 w-full space-y-10 flex-1">
+      <main className="max-w-2xl mx-auto w-full pb-6">
+        <FeaturedSection products={products} onClick={setSelectedProduct} primaryColor={store.corPrimaria || '#000'} />
+        
         {products.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-neutral-200 shadow-sm space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-neutral-100 flex items-center justify-center text-neutral-400 mx-auto">
@@ -349,13 +352,13 @@ const StorefrontContent: React.FC<{ store: Store }> = ({ store }) => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-0">
                   {catProducts.map((prod) => (
-                    <ProductCard
+                    <ProductRow
                       key={prod.id}
                       product={prod}
                       onClick={() => setSelectedProduct(prod)}
-                      primaryColor={store.corPrimaria}
+                      primaryColor={store.corPrimaria || '#000'}
                     />
                   ))}
                 </div>

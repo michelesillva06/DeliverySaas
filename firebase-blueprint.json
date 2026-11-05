@@ -68,7 +68,8 @@
         "foto": { "type": "string", "description": "Product image URL or data URL" },
         "disponivel": { "type": "boolean", "description": "Available for ordering" },
         "ordem": { "type": "number", "description": "Display order" },
-        "optionGroupIds": { "type": "array", "description": "Array of option group IDs" }
+        "optionGroupIds": { "type": "array", "description": "Array of option group IDs" },
+        "destaque": { "type": "boolean", "description": "Featured product flag", "optional": true }
       }
     },
     "OptionGroup": {
@@ -232,6 +233,16 @@
         "alvoId": { "type": "string", "description": "ID do alvo" },
         "detalhes": { "type": "string", "description": "Descrição detalhada" },
         "criadoEm": { "type": "string", "description": "Timestamp ISO" }
+      }
+    },
+    "FcmToken": {
+      "path": "fcm_tokens/{tokenId}",
+      "description": "Browser push notification tokens for consumers",
+      "fields": {
+        "id": { "type": "string", "description": "Token ID" },
+        "customerUid": { "type": "string", "description": "Customer anonymous UID" },
+        "token": { "type": "string", "description": "FCM registration token" },
+        "updatedAt": { "type": "string", "description": "Last updated ISO" }
       }
     }
   }

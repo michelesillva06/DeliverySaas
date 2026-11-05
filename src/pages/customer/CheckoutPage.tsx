@@ -30,6 +30,7 @@ import { limparObjeto } from '../../lib/utils';
 import { useToast } from '../../components/Toast';
 import { validateAndSanitizeCheckout } from '../../schemas/checkoutSchema';
 import { trackStorefrontEvent } from '../../services/analyticsService';
+import { requestNotificationPermission } from '../../services/notificationService';
 
 export const CheckoutWrapper: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -115,6 +116,7 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
     return 'whatsapp';
   });
   const [trocoPara, setTrocoPara] = useState<string>('');
+  const [wantsNotifications, setWantsNotifications] = useState(false);
   const [lgpdConsent] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -266,6 +268,11 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
       // Gravar no Firestore
       const order = await createOrderInFirestore(orderPayload);
       trackStorefrontEvent(store.id, store.slug, 'concluiu_pedido');
+
+      // Request notification permission if opted in
+      if (wantsNotifications) {
+        await requestNotificationPermission(customerUid);
+      }
 
       // Limpar chave de tentativa e carrinho SOMENTE após persistência confirmada
       orderAttemptIdRef.current = null;
@@ -717,6 +724,18 @@ const CheckoutContent: React.FC<{ store: Store }> = ({ store }) => {
               <p className="text-sm leading-relaxed text-neutral-600">
                 Seus dados (nome, telefone e endereço) são transmitidos diretamente à loja para o preparo e entrega do pedido, em conformidade com a LGPD.
               </p>
+            </div>
+            <div className="flex items-center gap-3 p-4 bg-neutral-50 rounded-2xl border border-neutral-200">
+              <input
+                type="checkbox"
+                id="pushNotifications"
+                className="w-5 h-5 accent-emerald-600 cursor-pointer"
+                checked={wantsNotifications}
+                onChange={(e) => setWantsNotifications(e.target.checked)}
+              />
+              <label htmlFor="pushNotifications" className="text-sm font-bold text-neutral-800 cursor-pointer">
+                Desejo receber atualizações do meu pedido pelo navegador.
+              </label>
             </div>
 
             {/* Banner de Erro com Ação de Tentar Novamente */}

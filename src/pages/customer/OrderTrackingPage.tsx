@@ -25,6 +25,7 @@ import { PixPaymentModal } from '../../components/PixPaymentModal';
 import { CartProvider, useCart } from '../../services/cartContext';
 import { useAuth } from '../../services/authContext';
 import { useToast } from '../../components/Toast';
+import { requestNotificationPermission } from '../../services/notificationService';
 
 export const OrderTrackingWrapper: React.FC = () => {
   const { slug, orderId } = useParams<{ slug: string; orderId: string }>();
@@ -77,6 +78,15 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
   const [order, setOrder] = useState<Order | null>(null);
   const [loadingOrder, setLoadingOrder] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied'
+  );
+
+  const enableNotifications = async () => {
+    if (!order) return;
+    const token = await requestNotificationPermission(order.customerUid);
+    if (token) setNotificationPermission('granted');
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -120,6 +130,10 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
           if (updated.customerUid && activeUid && !isOwner && !isCustomer) {
             setUnauthorized(true);
           } else {
+            // Check for status change to notify
+            if (order && order.status !== updated.status) {
+              notifyStatusChange(updated.status, store?.nome || 'Loja');
+            }
             setOrder(updated);
           }
         }
@@ -257,6 +271,28 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
     window.location.href = generateWhatsAppUrl(store.whatsapp, text);
   };
 
+  const notifyStatusChange = (status: OrderStatus, storeName: string) => {
+    let message = '';
+    switch (status) {
+      case 'aceito': message = `Seu pedido foi aceito pela ${storeName}!`; break;
+      case 'preparo': message = 'Seu pedido está sendo preparado.'; break;
+      case 'saiu_entrega': 
+        if (order.tipo === 'entrega') message = 'Seu pedido saiu para entrega!'; 
+        break;
+      case 'pronto': 
+        if (order.tipo === 'retirada') message = 'Seu pedido está pronto para retirada.'; 
+        break;
+      case 'entregue': message = 'Seu pedido foi concluído.'; break;
+      case 'cancelado': message = 'Seu pedido foi cancelado. Consulte os detalhes.'; break;
+      default: return;
+    }
+    
+    if (message && Notification.permission === 'granted') {
+      new Notification(message, { icon: '/logo.png' });
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-neutral-100 pb-24 text-base">
       {/* Topo do Acompanhamento */}
@@ -347,6 +383,14 @@ const OrderTrackingContent: React.FC<{ store: Store; orderId: string }> = ({ sto
                 ? 'Seu pedido está pronto e embalado aguardando retirada no balcão.'
                 : 'Obrigado pela preferência! Bom apetite!'}
             </p>
+            {notificationPermission !== 'granted' && (
+              <button
+                onClick={enableNotifications}
+                className="mt-4 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold hover:bg-emerald-200 transition-colors"
+              >
+                🔔 Habilitar notificações deste pedido
+              </button>
+            )}
           </div>
 
           {/* Timeline de Etapas */}

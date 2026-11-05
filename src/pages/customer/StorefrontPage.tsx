@@ -80,6 +80,27 @@ export const StorefrontWrapper: React.FC = () => {
     );
   }
 
+  if (store.excluida) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-neutral-950 text-white">
+        <div className="w-16 h-16 rounded-3xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500 mb-4">
+          <Utensils className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-black text-white">Esta loja não está disponível</h1>
+        <p className="text-base text-neutral-400 mt-2 max-w-sm">
+          Este cardápio foi desativado ou não está mais acessível nesta plataforma.
+        </p>
+        <Link
+          to="/"
+          className="mt-6 px-6 py-3.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-2xl text-base font-bold flex items-center gap-2 transition-colors min-h-[48px]"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Ir para a Página Inicial</span>
+        </Link>
+      </div>
+    );
+  }
+
   if (store.status !== 'ativa') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-neutral-950 text-white">

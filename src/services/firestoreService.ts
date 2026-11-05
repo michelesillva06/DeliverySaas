@@ -36,6 +36,7 @@ import {
   PaymentStatus,
   SaasConfig,
   SaasPaymentRequest,
+  StorePayment,
 } from '../types';
 import {
   recordOrderOperationalFee,
@@ -275,6 +276,198 @@ export async function seedDemoStoreInFirestore(slug = 'bora-de-acai'): Promise<S
   }
 }
 
+export async function seedMegaBurgerStoreInFirestore(slug = 'megaburger'): Promise<Store> {
+  const storeId = 'store_mega_burger_demo';
+  const demoStore: Store = {
+    id: storeId,
+    nome: 'Mega Burger',
+    slug: 'megaburger',
+    customSlug: 'mega-burger',
+    descricao: 'Smash burgers artesanais suculentos, pão brioche amanteigado, bacon crocante e molhos especiais. (Demonstração)',
+    whatsapp: '5592999997777',
+    status: 'ativa',
+    aberta: true,
+    aceitaEntrega: true,
+    aceitaRetirada: true,
+    corPrimaria: '#d97706',
+    pedidoMinimo: 20.0,
+    tempoEstimadoMin: 35,
+    tempoEstimadoRetiradaMin: 20,
+    endereco: 'Rua das Laranjeiras, 500 - Adrianópolis, Manaus - AM',
+    logo: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=300&q=80',
+    capa: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1200&q=80',
+    ownerUid: 'demo_megaburger_uid',
+    nomeResponsavel: 'Mega Burger',
+    emailResponsavel: 'contato@megaburger.com',
+    plano: 'Ilimitado',
+    valorImplantacao: 0,
+    valorMensalidade: 0,
+    diaVencimento: 30,
+    dataVencimento: '2030-12-31T23:59:59.000Z',
+    pagamentos: {
+      pix: true,
+      cartaoEntrega: true,
+      dinheiro: true,
+      whatsapp: true,
+    },
+    pixKeyType: 'telefone',
+    pixKey: '92999997777',
+    pixReceiverName: 'Mega Burger Lanches Ltda',
+    pixCity: 'MANAUS',
+    criadoEm: new Date().toISOString(),
+    viasImpressao: 'ambas',
+    imprimirAutoAoAceitar: false,
+    soundPreference: 'bell',
+    horarios: [],
+    nextOrderNumber: 2001,
+    mensagensWhatsapp: {
+      aceito: 'Olá {nome}! Seu pedido #{numero} no Mega Burger foi aceito.',
+      preparo: 'Olá {nome}! Seu burger #{numero} está na chapa sendo preparado!',
+      saiuEntrega: 'Olá {nome}! Seu pedido #{numero} saiu para entrega!',
+      prontoRetirada: 'Olá {nome}! Seu pedido #{numero} está pronto no balcão!',
+      cancelado: 'Olá {nome}. Seu pedido #{numero} foi cancelado.',
+    },
+  };
+
+  try {
+    await setDoc(doc(db, 'stores', storeId), limparObjeto(demoStore));
+
+    const categories: Category[] = [
+      { id: 'cat_burger_smash', storeId, nome: 'Smash Burgers Artesanais', ordem: 1, ativa: true },
+      { id: 'cat_burger_porcoes', storeId, nome: 'Porções & Acompanhamentos', ordem: 2, ativa: true },
+      { id: 'cat_burger_bebidas', storeId, nome: 'Bebidas Geladas', ordem: 3, ativa: true },
+    ];
+    for (const cat of categories) {
+      await setDoc(doc(db, 'categories', cat.id), limparObjeto(cat));
+    }
+
+    const optionGroups: OptionGroup[] = [
+      {
+        id: 'opt_burger_ponto',
+        storeId,
+        nome: 'Ponto da Carne',
+        obrigatorio: true,
+        min: 1,
+        max: 1,
+        opcoes: [
+          { id: 'opt_p1', nome: 'Ao Ponto Smash (Suculento)', preco: 0 },
+          { id: 'opt_p2', nome: 'Bem Passado Crocante', preco: 0 },
+        ],
+      },
+      {
+        id: 'opt_burger_extras',
+        storeId,
+        nome: 'Turbine seu Burger (Opcional)',
+        obrigatorio: false,
+        min: 0,
+        max: 5,
+        opcoes: [
+          { id: 'opt_b1', nome: 'Cheddar Melt Cremoso Extra', preco: 4.5 },
+          { id: 'opt_b2', nome: 'Fatias de Bacon Crocante Extra', preco: 5.5 },
+          { id: 'opt_b3', nome: 'Cebola Caramelizada', preco: 3.5 },
+          { id: 'opt_b4', nome: 'Molho Especial Mega Defumado (40ml)', preco: 3.0 },
+          { id: 'opt_b5', nome: 'Smash Blend Extra 90g com Queijo', preco: 8.9 },
+        ],
+      },
+    ];
+    for (const og of optionGroups) {
+      await setDoc(doc(db, 'optionGroups', og.id), limparObjeto(og));
+    }
+
+    const products: Product[] = [
+      {
+        id: 'prod_mega_bacon',
+        storeId,
+        categoriaId: 'cat_burger_smash',
+        nome: 'The Mega Bacon Smash',
+        descricao: 'Duplo smash burger 180g dry-aged, generoso cheddar melt, fatias de bacon crocante e molho secreto no pão brioche selado.',
+        preco: 36.9,
+        precoPromocional: 32.9,
+        destaque: true,
+        disponivel: true,
+        ativo: true,
+        ordem: 1,
+        optionGroupIds: ['opt_burger_ponto', 'opt_burger_extras'],
+        imagem: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_smoky_cheddar',
+        storeId,
+        categoriaId: 'cat_burger_smash',
+        nome: 'Smoky Cheddar & Onions',
+        descricao: 'Dois smash 90g, cheddar inglês cremoso, cebola caramelizada artesanal e picles crocante.',
+        preco: 31.9,
+        destaque: true,
+        disponivel: true,
+        ativo: true,
+        ordem: 2,
+        optionGroupIds: ['opt_burger_ponto', 'opt_burger_extras'],
+        imagem: 'https://images.unsplash.com/photo-1586190848861-99aa4a171e90?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_classic_cheese',
+        storeId,
+        categoriaId: 'cat_burger_smash',
+        nome: 'Classic Cheeseburger',
+        descricao: 'Smash 100g, queijo prato derretido, maionese artesanal da casa em pão brioche macio.',
+        preco: 24.9,
+        destaque: false,
+        disponivel: true,
+        ativo: true,
+        ordem: 3,
+        optionGroupIds: ['opt_burger_ponto', 'opt_burger_extras'],
+        imagem: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_fritas_cheddar_bacon',
+        storeId,
+        categoriaId: 'cat_burger_porcoes',
+        nome: 'Fritas Rústicas com Cheddar e Bacon',
+        descricao: 'Batatas rústicas douradas e crocantes, cobertas com molho cheddar cremoso e farofa de bacon.',
+        preco: 22.0,
+        destaque: true,
+        disponivel: true,
+        ativo: true,
+        ordem: 4,
+        optionGroupIds: [],
+        imagem: 'https://images.unsplash.com/photo-1576107232684-1279f3908594?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'prod_refrigerante_lata',
+        storeId,
+        categoriaId: 'cat_burger_bebidas',
+        nome: 'Refrigerante em Lata 350ml',
+        descricao: 'Coca-Cola original, Coca Sem Açúcar ou Guaraná Antarctica bem gelado.',
+        preco: 6.5,
+        destaque: false,
+        disponivel: true,
+        ativo: true,
+        ordem: 5,
+        optionGroupIds: [],
+        imagem: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=600&q=80',
+      },
+    ];
+    for (const prod of products) {
+      await setDoc(doc(db, 'products', prod.id), limparObjeto(prod));
+    }
+
+    const zones: DeliveryZone[] = [
+      { id: 'zone_mb_1', storeId, bairro: 'Adrianópolis', taxa: 6.0, ativo: true },
+      { id: 'zone_mb_2', storeId, bairro: 'Centro', taxa: 7.0, ativo: true },
+      { id: 'zone_mb_3', storeId, bairro: 'Nossa Senhora das Graças', taxa: 5.0, ativo: true },
+      { id: 'zone_mb_4', storeId, bairro: 'Parque 10', taxa: 8.0, ativo: true },
+    ];
+    for (const zone of zones) {
+      await setDoc(doc(db, 'deliveryZones', zone.id), limparObjeto(zone));
+    }
+
+    return demoStore;
+  } catch (err) {
+    console.error('Erro ao semear loja Mega Burger no Firestore:', err);
+    return demoStore;
+  }
+}
+
 export async function getStoreBySlugFromFirestore(slug: string): Promise<Store | null> {
   try {
     const cleanSlug = slug.toLowerCase().trim();
@@ -292,12 +485,6 @@ export async function getStoreBySlugFromFirestore(slug: string): Promise<Store |
       return snapCustom.docs[0].data() as Store;
     }
     
-    // 3. Se for a loja de demonstração e não for encontrada no banco, criar automaticamente
-    if (cleanSlug === 'bora-de-acai' || cleanSlug === 'restaurante-demonstracao') {
-      const seeded = await seedDemoStoreInFirestore(cleanSlug);
-      return seeded;
-    }
-
     return null;
   } catch (error) {
     console.error('Erro ao buscar loja por slug no Firestore:', error);
@@ -365,9 +552,6 @@ export function subscribeToStoreBySlug(slug: string, callback: (store: Store | n
         const snapCustom = await getDocs(qCustom);
         if (!snapCustom.empty) {
           callback(snapCustom.docs[0].data() as Store);
-        } else if (cleanSlug === 'bora-de-acai' || cleanSlug === 'restaurante-demonstracao') {
-          const seeded = await seedDemoStoreInFirestore(cleanSlug);
-          callback(seeded);
         } else {
           callback(null);
         }
@@ -377,6 +561,56 @@ export function subscribeToStoreBySlug(slug: string, callback: (store: Store | n
       console.error('Erro no snapshot de store por slug:', err);
     }
   );
+}
+
+export async function softDeleteStoreInFirestore(
+  storeId: string,
+  authorEmail: string,
+  storeSlug: string,
+  storeNome: string
+): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  const now = new Date().toISOString();
+  await updateDoc(docRef, {
+    excluida: true,
+    excluidaEm: now,
+    excluidaPor: authorEmail,
+    aberta: false,
+  });
+
+  await recordAdminAuditLog({
+    autorEmail: authorEmail,
+    autorUid: 'master',
+    acao: 'LOJA_EXCLUIDA',
+    alvoId: storeId,
+    alvoNome: storeNome,
+    detalhes: `Loja "${storeNome}" (${storeSlug}) foi excluída logicamente da plataforma.`,
+  });
+}
+
+export async function restoreStoreInFirestore(
+  storeId: string,
+  authorEmail: string,
+  storeSlug: string,
+  storeNome: string
+): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  const now = new Date().toISOString();
+  await updateDoc(docRef, {
+    excluida: false,
+    aberta: false, // Restaurar como fechado para revisão operacional
+    restauradaEm: now,
+    restauradaPor: authorEmail,
+  });
+
+  await recordAdminAuditLog({
+    autorEmail: authorEmail,
+    autorUid: 'master',
+    acao: 'LOJA_RESTAURADA',
+    alvoId: storeId,
+    alvoNome: storeNome,
+    detalhes: `Loja "${storeNome}" (${storeSlug}) foi restaurada com status fechada para revisão operacional.`,
+  });
 }
 
 export function subscribeToAllStores(callback: (stores: Store[]) => void): Unsubscribe {
@@ -431,6 +665,22 @@ export async function updateStoreHorariosInFirestore(
 ): Promise<void> {
   const docRef = doc(db, 'stores', storeId);
   await updateDoc(docRef, limparObjeto({ horarios, aberta }));
+}
+
+export async function updateStoreLogoInFirestore(storeId: string, logoUrl: string | null): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  const cleanUrl = logoUrl && typeof logoUrl === 'string' ? logoUrl.trim() : '';
+  await updateDoc(docRef, {
+    logo: cleanUrl,
+  });
+}
+
+export async function updateStoreCapaInFirestore(storeId: string, capaUrl: string | null): Promise<void> {
+  const docRef = doc(db, 'stores', storeId);
+  const cleanUrl = capaUrl && typeof capaUrl === 'string' ? capaUrl.trim() : '';
+  await updateDoc(docRef, {
+    capa: cleanUrl,
+  });
 }
 
 // ==========================================

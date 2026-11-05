@@ -104,6 +104,13 @@ export interface Store {
   zonasEntrega?: any[];
   formasPagamento?: any;
   soundPreference?: 'chime' | 'bell' | 'alert';
+
+  // Exclusão Lógica e Governança (Master)
+  excluida?: boolean;
+  excluidaEm?: string;
+  excluidaPor?: string;
+  restauradaEm?: string;
+  restauradaPor?: string;
 }
 
 export interface Category {
@@ -324,6 +331,8 @@ export interface SaasConfig {
     pro: SaasPlanDetails;
     ilimitado: SaasPlanDetails;
   };
+  demoAcaiSlug?: string;
+  demoBurgerSlug?: string;
 }
 
 export interface SubscriptionPaymentRequest {
@@ -434,6 +443,7 @@ export interface OperationalFeeEntry {
   cobrancaId?: string; // ID da fatura vinculada
   estornadoEm?: string;
   motivoEstorno?: string;
+  dataConfirmacaoPagamento?: string;
   criadoEm: string; // ISO string
 }
 
@@ -568,7 +578,9 @@ export type AuditActionType =
   | 'ajuste_saldo'
   | 'ajuste_manual_credito_debito'
   | 'editar_loja'
-  | 'login_como_loja';
+  | 'login_como_loja'
+  | 'LOJA_EXCLUIDA'
+  | 'LOJA_RESTAURADA';
 
 export interface AdminAuditLog {
   id: string;

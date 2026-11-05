@@ -20,7 +20,11 @@ import {
   CROP_CONFIGS,
 } from '../lib/imageProcessor';
 import { uploadImage, deleteImage } from '../services/imageService';
-import { updateProductPhotoInFirestore } from '../services/firestoreService';
+import {
+  updateProductPhotoInFirestore,
+  updateStoreLogoInFirestore,
+  updateStoreCapaInFirestore,
+} from '../services/firestoreService';
 import { useToast } from './Toast';
 
 export interface ImageUploaderProps {
@@ -54,6 +58,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   // Indicadores de Etapa Real com Tempo
   const [uploadStage, setUploadStage] = useState<string>('');
@@ -73,6 +78,37 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const config = CROP_CONFIGS[tipo];
+  const isCover = tipo === 'capa';
+  const aspectClass = isCover ? 'aspect-[3/1]' : 'aspect-square';
+
+  // Rótulos contextuais
+  const adicionarLabel =
+    tipo === 'logo'
+      ? 'Adicionar logotipo'
+      : tipo === 'capa'
+      ? 'Adicionar capa'
+      : 'Adicionar foto';
+
+  const trocarLabel =
+    tipo === 'logo'
+      ? 'Trocar logotipo'
+      : tipo === 'capa'
+      ? 'Trocar capa'
+      : 'Trocar imagem';
+
+  const removerAriaLabel =
+    tipo === 'logo'
+      ? 'Remover logotipo'
+      : tipo === 'capa'
+      ? 'Remover capa'
+      : 'Remover imagem';
+
+  const confirmTitle =
+    tipo === 'logo'
+      ? 'Remover logotipo?'
+      : tipo === 'capa'
+      ? 'Remover capa?'
+      : 'Remover esta imagem?';
 
   // Limpeza de timer ao desmontar
   useEffect(() => {
@@ -93,7 +129,6 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
     try {
       setUploadStage('Lendo imagem...');
-      // 3. REDUZIR ANTES DE TUDO: Redimensionar imagem original para max 1600px no maior lado com createImageBitmap + canvas
       const { dataUrl, durationMs, width, height } = await downscaleImageFile(file, 1600);
       console.log(`[Upload Stage] Lendo imagem: ${durationMs} ms (Dimensão: ${width}x${height})`);
 
@@ -104,6 +139,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     } catch (err: any) {
       console.error('[ImageUploader] Erro ao ler/reduzir arquivo:', err);
       setErrorMessage('Não foi possível ler o arquivo de imagem.');
+      showToast('Não foi possível ler o arquivo de imagem.', 'error');
     }
   };
 
@@ -182,10 +218,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     stopTimer();
     setUploading(false);
     setUploadStage('');
-    showToast('Envio cancelado pelo usuário.', 'info');
+    showToast('Envio cancelado.', 'info');
   };
 
-  // Executar Recorte e Upload com Etapas Reais, Timer e Safety Timeout de 15s
+  // Executar Recorte e Upload com Etapas Reais, Timer e Persistência Imediata
   const handleConfirmCrop = async () => {
     if (!imageRef.current || !viewportRef.current) return;
 
@@ -200,7 +236,6 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     timerRef.current = setInterval(() => {
       setElapsedSeconds((prev) => {
         const next = Math.round((prev + 0.2) * 10) / 10;
-        // 5. SAFETY TIMEOUT: Se passar de 15 segundos no total, mostrar erro claro
         if (next >= 15) {
           abortControllerRef.current = true;
           stopTimer();
@@ -249,7 +284,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       if (abortControllerRef.current) return;
 
-      // ETAPA 3: SALVANDO
+      // ETAPA 3: SALVANDO ARQUIVO NO STORAGE / FIRESTORE
       setUploadStage('Salvando…');
       const saveStartTime = performance.now();
 
@@ -261,25 +296,23 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       });
 
       const saveDuration = Math.round(performance.now() - saveStartTime);
-      console.log(
-        `[Upload Stage] Salvando: ${saveDuration} ms (Método usado: ${result.method})`
-      );
+      console.log(`[Upload Stage] Salvando imagem: ${saveDuration} ms`);
 
       if (abortControllerRef.current) return;
 
-      // Gravação pontual do produto no Firestore se for um produto existente
-      if (tipo === 'produto' && entityId) {
+      // ETAPA 4: PERSISTÊNCIA IMEDIATA DO REGISTRO NO FIRESTORE
+      // Salva imediatamente sem depender do botão geral de configurações
+      if (tipo === 'logo') {
+        await updateStoreLogoInFirestore(storeId, result.url);
+      } else if (tipo === 'capa') {
+        await updateStoreCapaInFirestore(storeId, result.url);
+      } else if (tipo === 'produto' && entityId) {
         await updateProductPhotoInFirestore(entityId, result.url);
       }
 
-      const totalDuration = Math.round(performance.now() - totalStartTime);
-      console.log(
-        `[Upload Total] Tempo total de processamento e envio da foto: ${totalDuration} ms`
-      );
-
-      // Apagar imagem antiga se houver
+      // Apagar imagem antiga com segurança do Storage se pertencia à loja
       if (currentImageUrl && currentImageUrl !== result.url) {
-        deleteImage(currentImageUrl).catch(console.warn);
+        deleteImage(currentImageUrl, storeId).catch(console.warn);
       }
 
       stopTimer();
@@ -287,17 +320,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       setShowCropModal(false);
       setRawImageSrc(null);
 
-      if (result.method === 'storage') {
-        showToast(`Imagem salva no Storage (${(totalDuration / 1000).toFixed(1)}s)!`, 'success');
-      } else {
-        showToast(`Imagem otimizada e salva (${(totalDuration / 1000).toFixed(1)}s)!`, 'success');
-      }
+      const successMsg =
+        tipo === 'logo'
+          ? 'Logotipo atualizado e salvo com sucesso!'
+          : tipo === 'capa'
+          ? 'Capa atualizada e salva com sucesso!'
+          : 'Foto atualizada e salva com sucesso!';
+
+      showToast(successMsg, 'success');
     } catch (err: any) {
       stopTimer();
       console.error('[ImageUploader] Erro ao processar/enviar imagem:', err);
-      const msg = err?.code ? `[${err.code}] ${err.message}` : err?.message || 'Falha de conexão ou envio de imagem.';
+      const msg = err?.code ? `[${err.code}] ${err.message}` : err?.message || 'Falha ao processar e salvar a imagem.';
       setErrorMessage(msg);
-      showToast(`Erro ao enviar foto: ${msg}`, 'error');
+      showToast(`Erro ao salvar imagem: ${msg}`, 'error');
     } finally {
       stopTimer();
       setUploading(false);
@@ -305,29 +341,52 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     }
   };
 
-  const handleRemove = async () => {
-    if (!currentImageUrl) return;
-    if (!window.confirm('Tem certeza que deseja remover esta foto?')) return;
-
+  // Remoção com Confirmação e Persistência Imediata no Firestore
+  const handleConfirmRemove = async () => {
     setUploading(true);
+    setErrorMessage('');
     try {
-      await deleteImage(currentImageUrl);
-      if (tipo === 'produto' && entityId) {
+      // 1. Atualizar imediatamente o cadastro da loja no Firestore
+      if (tipo === 'logo') {
+        await updateStoreLogoInFirestore(storeId, '');
+      } else if (tipo === 'capa') {
+        await updateStoreCapaInFirestore(storeId, '');
+      } else if (tipo === 'produto' && entityId) {
         await updateProductPhotoInFirestore(entityId, null);
       }
-      if (onImageRemoved) onImageRemoved();
-      showToast('Foto removida com sucesso.', 'info');
+
+      // 2. Limpeza segura no Storage apenas se o arquivo for exclusivo da loja
+      if (currentImageUrl) {
+        await deleteImage(currentImageUrl, storeId);
+      }
+
+      setShowRemoveConfirm(false);
+
+      // 3. Notificar componente pai
+      if (onImageRemoved) {
+        onImageRemoved();
+      }
+
+      const removedMsg =
+        tipo === 'logo'
+          ? 'Logotipo removido com sucesso.'
+          : tipo === 'capa'
+          ? 'Capa removida com sucesso.'
+          : 'Foto removida com sucesso.';
+
+      showToast(removedMsg, 'info');
     } catch (e: any) {
-      console.error('[ImageUploader] Erro ao remover imagem:', e);
-      const msg = e?.code ? `[${e.code}] ${e.message}` : e?.message || 'Erro ao remover imagem.';
-      showToast(`Erro ao remover foto: ${msg}`, 'error');
+      console.error('[ImageUploader] Erro ao remover imagem no Firestore:', e);
+      const msg = e?.message || 'Erro ao remover imagem do cadastro.';
+      setErrorMessage(msg);
+      showToast(`Erro ao remover: ${msg}`, 'error');
+      // Preserva a imagem atual caso a exclusão no banco falhe
     } finally {
       setUploading(false);
     }
   };
 
-  const isCover = tipo === 'capa';
-  const aspectClass = isCover ? 'aspect-[3/1]' : 'aspect-square';
+  const hasImage = Boolean(currentImageUrl && currentImageUrl.trim().length > 0);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -340,6 +399,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         </div>
       )}
 
+      {/* Input de arquivo invisível */}
       <input
         ref={fileInputRef}
         type="file"
@@ -348,6 +408,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         className="hidden"
       />
 
+      {/* Input de câmera invisível */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -357,69 +418,119 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         className="hidden"
       />
 
-      {currentImageUrl ? (
-        <div className={`relative rounded-2xl overflow-hidden border border-neutral-200 group bg-neutral-100 ${aspectClass}`}>
-          <img
-            src={currentImageUrl}
-            alt={label || 'Imagem'}
-            className="w-full h-full object-cover"
-          />
+      {hasImage ? (
+        /* ESTADO COM IMAGEM */
+        <div className="space-y-2.5">
+          <div className={`relative rounded-2xl overflow-hidden border border-neutral-200 bg-neutral-100 ${aspectClass}`}>
+            <img
+              src={currentImageUrl}
+              alt={label || 'Prévia'}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                // Previne imagem quebrada caso a URL seja inválida
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
 
-          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-3">
+            {/* Botão × no canto superior direito: Área de toque mínima de 44x44px, alto contraste */}
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setShowRemoveConfirm(true)}
               disabled={uploading}
-              className="px-3 py-2 bg-white hover:bg-neutral-100 text-neutral-900 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+              aria-label={removerAriaLabel}
+              title={removerAriaLabel}
+              className="absolute top-2.5 right-2.5 z-10 min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-neutral-950/80 hover:bg-rose-600 text-white flex items-center justify-center shadow-lg border-2 border-white/60 hover:border-rose-300 backdrop-blur-md transition-all active:scale-90 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer disabled:opacity-50"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Trocar</span>
+              <X className="w-5 h-5 stroke-[2.5]" />
             </button>
 
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={uploading}
-              className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Remover</span>
-            </button>
+            {/* Confirmação Curta de Remoção Sobreposta à Imagem */}
+            {showRemoveConfirm && (
+              <div className="absolute inset-0 bg-neutral-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center z-20 animate-in fade-in duration-150">
+                <AlertCircle className="w-7 h-7 text-rose-500 mb-2" />
+                <p className="text-xs font-black text-white mb-1">{confirmTitle}</p>
+                <p className="text-[11px] text-neutral-300 max-w-xs mb-3">
+                  A imagem será removida do cadastro da sua loja e do cardápio imediatamente.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRemoveConfirm(false)}
+                    disabled={uploading}
+                    className="min-h-[40px] px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmRemove}
+                    disabled={uploading}
+                    className="min-h-[40px] px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    {uploading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Removendo…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Sim, remover</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Botão Principal: Trocar imagem */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="w-full min-h-[44px] py-2.5 px-4 bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-300 hover:border-neutral-400 rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4 text-neutral-600" />
+            <span>{trocarLabel}</span>
+          </button>
         </div>
       ) : (
+        /* ESTADO SEM IMAGEM: Exibe somente área de upload com ícone, formato/proporção e Adicionar */
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`relative rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center p-4 text-center ${aspectClass} ${
+          className={`relative rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center ${aspectClass} ${
             isDragging
               ? 'border-rose-500 bg-rose-50/50 scale-[1.01]'
-              : 'border-neutral-300 hover:border-neutral-400 bg-neutral-50 hover:bg-neutral-100/80'
+              : 'border-neutral-300 hover:border-neutral-400 bg-neutral-50 hover:bg-neutral-100/70'
           }`}
         >
-          <div className="w-10 h-10 rounded-2xl bg-white border border-neutral-200 shadow-xs flex items-center justify-center text-neutral-500 mb-2">
-            <ImageIcon className="w-5 h-5 text-neutral-600" />
+          <div className="w-12 h-12 rounded-2xl bg-white border border-neutral-200 shadow-xs flex items-center justify-center text-neutral-600 mb-2">
+            <ImageIcon className="w-6 h-6 text-neutral-500" />
           </div>
 
           <p className="text-xs font-bold text-neutral-800">
-            Arraste ou clique para selecionar
+            {tipo === 'logo' ? 'Nenhum logotipo adicionado' : tipo === 'capa' ? 'Nenhuma capa adicionada' : 'Nenhuma imagem cadastrada'}
           </p>
           <p className="text-[11px] text-neutral-400 mt-0.5">
-            JPG, PNG ou WebP (máx. 10 MB)
+            JPG, PNG ou WebP (máx. 10 MB) • {aspectRatioLabel || (isCover ? 'Proporção 3:1' : 'Proporção 1:1')}
           </p>
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-4 flex items-center gap-2">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 fileInputRef.current?.click();
               }}
-              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-[11px] font-bold shadow-xs cursor-pointer"
+              disabled={uploading}
+              className="min-h-[44px] px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50"
             >
-              Escolher Foto
+              <Upload className="w-3.5 h-3.5" />
+              <span>{adicionarLabel}</span>
             </button>
 
             <button
@@ -428,7 +539,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 e.stopPropagation();
                 cameraInputRef.current?.click();
               }}
-              className="px-3 py-1.5 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-xl text-[11px] font-bold shadow-xs flex items-center gap-1 cursor-pointer sm:hidden"
+              disabled={uploading}
+              className="min-h-[44px] px-3.5 py-2.5 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer sm:hidden transition-transform active:scale-95 disabled:opacity-50"
             >
               <Camera className="w-3.5 h-3.5 text-neutral-600" />
               <span>Câmera</span>
@@ -458,6 +570,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         </div>
       )}
 
+      {/* Modal de Recorte e Ajuste */}
       {showCropModal && rawImageSrc && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg p-5 space-y-4 shadow-2xl text-white">
@@ -521,8 +634,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 <div className="border-r border-b border-white/10" />
                 <div className="border-r border-b border-white/10" />
                 <div className="border-b border-white/10" />
-                <div className="border-r border-white/10" />
-                <div className="border-r border-white/10" />
+                <div className="border-r border-b border-white/10" />
+                <div className="border-r border-b border-white/10" />
                 <div />
               </div>
             </div>
@@ -585,7 +698,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                     setRawImageSrc(null);
                   }
                 }}
-                className="w-1/3 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                className="w-1/3 min-h-[44px] py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 {uploading ? 'Cancelar' : 'Fechar'}
               </button>
@@ -594,7 +707,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 type="button"
                 onClick={handleConfirmCrop}
                 disabled={uploading}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="flex-1 min-h-[44px] py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {uploading ? (
                   <>
@@ -604,7 +717,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Confirmar e Salvar Foto</span>
+                    <span>Confirmar e Salvar Imagem</span>
                   </>
                 )}
               </button>

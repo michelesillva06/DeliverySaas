@@ -615,6 +615,21 @@ export const StoreSettingsPage: React.FC = () => {
       {/* ABA 1: PERFIL & VISUAL */}
       {activeTab === 'perfil' && (
         <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
+          {/* Aviso não bloqueante se faltar logotipo ou capa */}
+          {(!formData.logo?.trim() || !formData.capa?.trim()) && (
+            <div className="p-4 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start sm:items-center gap-3 text-amber-950">
+              <Sparkles className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5 sm:mt-0" />
+              <div className="flex-1 text-xs">
+                <p className="font-bold text-amber-950">
+                  Complete o visual da sua loja: adicione um logotipo e uma capa para valorizar seu cardápio.
+                </p>
+                <p className="text-amber-800 text-[11px] mt-0.5">
+                  Logotipo e capa são recomendados para fortalecer sua identidade e gerar confiança, mas não impedem o recebimento de pedidos.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div>
               <label className="block font-bold text-neutral-700 mb-1">Nome da Loja *</label>

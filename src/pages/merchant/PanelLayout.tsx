@@ -174,6 +174,41 @@ export const PanelLayout: React.FC = () => {
     );
   }
 
+  if (store.excluida) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-neutral-100 text-center">
+        <div className="w-16 h-16 rounded-3xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 mb-4 shadow-sm">
+          <AlertTriangle className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black text-neutral-900">Esta loja foi desativada</h2>
+        <p className="text-sm text-neutral-600 mt-2 max-w-md">
+          A loja &quot;{store.nome}&quot; ({store.slug}) foi excluída pelo administrador master. O acesso operacional a este painel está desativado.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+          {isSuperAdmin && (
+            <button
+              onClick={() => {
+                clearActiveStore();
+                navigate('/admin/super');
+              }}
+              className="px-5 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-sm font-bold flex items-center gap-2"
+            >
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span>Voltar ao Painel Master</span>
+            </button>
+          )}
+          <button
+            onClick={handleLogout}
+            className="px-5 py-3 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 rounded-xl text-sm font-bold flex items-center gap-2"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Encerrar Sessão</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col">
       {/* Banner Fixo SuperAdmin Gerenciando Loja */}

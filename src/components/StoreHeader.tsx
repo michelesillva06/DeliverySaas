@@ -13,19 +13,56 @@ export const StoreHeader: React.FC<StoreHeaderProps> = ({ store }) => {
   return (
     <div className="relative">
       {/* Cover Image */}
-      <div className="h-48 w-full bg-neutral-200">
-        {store.capa && <img src={store.capa} alt={store.nome} className="w-full h-full object-cover" />}
+      <div className="h-48 w-full relative overflow-hidden bg-neutral-900">
+        {store.capa && store.capa.trim() ? (
+          <img
+            src={store.capa}
+            alt={store.nome}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLElement).style.display = 'none';
+            }}
+          />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center relative"
+            style={{
+              background: `linear-gradient(135deg, ${store.corPrimaria || '#e11d48'}44 0%, #171717 100%)`,
+            }}
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-40" />
+            <span className="text-white/20 font-black text-2xl sm:text-3xl tracking-widest uppercase select-none px-4 text-center">
+              {store.nome}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Main Info Card */}
       <div className="relative -mt-12 mx-4 bg-white rounded-3xl p-5 shadow-lg border border-neutral-100">
         {/* Logo */}
-        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full border-4 border-white bg-white shadow-md overflow-hidden">
-          {store.logo ? (
-            <img src={store.logo} alt={store.nome} className="w-full h-full object-cover" />
+        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full border-4 border-white bg-white shadow-md overflow-hidden flex items-center justify-center">
+          {store.logo && store.logo.trim() ? (
+            <img
+              src={store.logo}
+              alt={store.nome}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-neutral-100 text-neutral-400 font-black text-2xl">
-              {store.nome.slice(0, 2).toUpperCase()}
+            <div
+              className="w-full h-full flex items-center justify-center font-black text-2xl text-white shadow-inner"
+              style={{ backgroundColor: store.corPrimaria || '#e11d48' }}
+            >
+              {(store.nome || 'LOJA')
+                .trim()
+                .split(' ')
+                .map((w) => w[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase() || 'LJ'}
             </div>
           )}
         </div>

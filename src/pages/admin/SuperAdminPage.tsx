@@ -40,6 +40,8 @@ import {
   Flame,
   ShieldCheck,
   Trash2,
+  MoreVertical,
+  RotateCcw,
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
@@ -78,6 +80,8 @@ import {
   executeLegacyPasswordCleanup,
   PasswordCleanupScanResult,
   PasswordCleanupExecutionResult,
+  softDeleteStoreInFirestore,
+  restoreStoreInFirestore,
 } from '../../services/firestoreService';
 import {
   subscribeToAllOperationalFeeEntries,
@@ -178,6 +182,13 @@ export const SuperAdminPage: React.FC = () => {
   const [scanningMigration, setScanningMigration] = useState(false);
   const [executingMigration, setExecutingMigration] = useState(false);
   const [migrationResult, setMigrationResult] = useState<PasswordCleanupExecutionResult | null>(null);
+
+  // Estados para Exclusão Lógica e Filtragem de Lojas
+  const [storeFilter, setStoreFilter] = useState<'operacao' | 'excluidas'>('operacao');
+  const [deletingStore, setDeletingStore] = useState<Store | null>(null);
+  const [confirmSlugInput, setConfirmSlugInput] = useState('');
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   const handleScanLegacyPasswords = async () => {
     setScanningMigration(true);
@@ -949,19 +960,37 @@ export const SuperAdminPage: React.FC = () => {
   const next7Days = new Date();
   next7Days.setDate(next7Days.getDate() + 7);
 
-  const totalStores = stores.length;
-  const activeStores = stores.filter((s) => s.status === 'ativa').length;
-  const expiredStores = stores.filter((s) => {
+  // Separar Lojas em Operação e Lojas Excluídas (Exclusão Lógica)
+  const operatingStores = stores.filter((s) => !s.excluida);
+  const excludedStores = stores.filter((s) => !!s.excluida);
+
+  const totalStores = operatingStores.length;
+  const activeStores = operatingStores.filter((s) => s.status === 'ativa').length;
+  const expiredStores = operatingStores.filter((s) => {
     if (s.status === 'vencida') return true;
     if (s.dataVencimento && new Date(s.dataVencimento) < now) return true;
     return false;
   }).length;
 
-  const expiringIn7Days = stores.filter((s) => {
+  const expiringIn7Days = operatingStores.filter((s) => {
     if (!s.dataVencimento) return false;
     const vence = new Date(s.dataVencimento);
     return vence >= now && vence <= next7Days;
   });
+
+  const handleRestoreStore = async (st: Store) => {
+    if (!currentUser || !isMasterRole(currentUser.role)) {
+      showToast('Apenas o administrador master pode restaurar lojas.', 'error');
+      return;
+    }
+    try {
+      await restoreStoreInFirestore(st.id, currentUser.email || 'master', st.slug, st.nome);
+      showToast(`Loja "${st.nome}" restaurada com sucesso. O delivery foi mantido fechado para revisão operacional.`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao restaurar loja.', 'error');
+    }
+  };
 
   const pendingPaymentReqs = paymentRequests.filter((r) => r.status === 'pendente');
 
@@ -1175,197 +1204,380 @@ export const SuperAdminPage: React.FC = () => {
             </div>
 
             <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs overflow-hidden">
-              <div className="p-4 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+              <div className="p-4 bg-neutral-50 border-b border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-bold text-sm text-neutral-800">Lojas Cadastradas & Acessos</h2>
+                  <h2 className="font-bold text-sm text-neutral-800">Gerenciamento de Lojas & Acessos</h2>
                   <p className="text-[11px] text-neutral-500">
-                    Gerencie o estabelecimento, visualize como a loja e administre e-mails e senhas dos proprietários.
+                    Gerencie o estabelecimento, visualize como a loja e administre e-mails, permissões e exclusões lógicas.
                   </p>
+                  <div className="flex items-center gap-1.5 mt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setStoreFilter('operacao')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        storeFilter === 'operacao'
+                          ? 'bg-neutral-900 text-white shadow-xs'
+                          : 'bg-white border border-neutral-300 text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      Lojas em Operação ({operatingStores.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStoreFilter('excluidas')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        storeFilter === 'excluidas'
+                          ? 'bg-rose-700 text-white shadow-xs'
+                          : 'bg-white border border-neutral-300 text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      Lojas Excluídas ({excludedStores.length})
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setTab('nova_loja')}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Cadastrar Nova Loja</span>
-                </button>
+
+                {storeFilter === 'operacao' && (
+                  <button
+                    onClick={() => setTab('nova_loja')}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs self-start sm:self-auto"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>Cadastrar Nova Loja</span>
+                  </button>
+                )}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse min-w-[850px]">
-                  <thead>
-                    <tr className="bg-neutral-50/50 border-b border-neutral-200 font-bold text-neutral-500 uppercase tracking-wider text-[11px]">
-                      <th className="p-4 pl-6">Loja</th>
-                      <th className="p-4">Responsável & Acesso (OWNER)</th>
-                      <th className="p-4">Plano / Valor</th>
-                      <th className="p-4">Vencimento</th>
-                      <th className="p-4">Status Loja</th>
-                      <th className="p-4 pr-6 text-right">Ações do Administrador</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {stores.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-12 text-center text-neutral-400">
-                          Nenhuma loja cadastrada até o momento.
-                        </td>
+              {storeFilter === 'operacao' ? (
+                /* TABELA DE LOJAS EM OPERAÇÃO */
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                    <thead>
+                      <tr className="bg-neutral-50/50 border-b border-neutral-200 font-bold text-neutral-500 uppercase tracking-wider text-[11px]">
+                        <th className="p-4 pl-6">Loja</th>
+                        <th className="p-4">Responsável & Acesso (OWNER)</th>
+                        <th className="p-4">Plano / Valor</th>
+                        <th className="p-4">Vencimento</th>
+                        <th className="p-4">Status Loja</th>
+                        <th className="p-4 pr-6 text-right">Ações do Administrador</th>
                       </tr>
-                    ) : (
-                      stores.map((s) => {
-                        const vence = s.dataVencimento ? new Date(s.dataVencimento) : null;
-                        const isExpired = s.status === 'vencida' || (vence !== null && vence < now && s.status !== 'ativa');
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {operatingStores.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-12 text-center text-neutral-400">
+                            Nenhuma loja em operação cadastrada até o momento.
+                          </td>
+                        </tr>
+                      ) : (
+                        operatingStores.map((s) => {
+                          const vence = s.dataVencimento ? new Date(s.dataVencimento) : null;
+                          const isExpired = s.status === 'vencida' || (vence !== null && vence < now && s.status !== 'ativa');
+                          const isMenuOpen = openActionMenuId === s.id;
 
-                        return (
-                          <tr key={s.id} className="hover:bg-neutral-50/80 transition-colors">
-                            <td className="p-4 pl-6">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-neutral-600 flex-shrink-0">
-                                  {s.logo ? (
-                                    <img src={s.logo} alt={s.nome} className="w-full h-full object-cover" />
-                                  ) : (
-                                    s.nome.slice(0, 2).toUpperCase()
+                          return (
+                            <tr key={s.id} className="hover:bg-neutral-50/80 transition-colors">
+                              <td className="p-4 pl-6">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-2xl bg-neutral-100 border border-neutral-200 overflow-hidden flex items-center justify-center font-bold text-neutral-600 flex-shrink-0">
+                                    {s.logo ? (
+                                      <img src={s.logo} alt={s.nome} className="w-full h-full object-cover" />
+                                    ) : (
+                                      s.nome.slice(0, 2).toUpperCase()
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-neutral-900 text-sm">{s.nome}</span>
+                                      <a
+                                        href={`/#/${s.slug}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-neutral-400 hover:text-neutral-700"
+                                        title="Abrir cardápio"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                    <span className="text-[11px] text-neutral-400 block font-mono">
+                                      /{s.slug}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Informações de Acesso do Responsável */}
+                              <td className="p-4">
+                                <div className="space-y-0.5">
+                                  <div className="font-bold text-neutral-800 text-xs">
+                                    {s.nomeResponsavel || 'Não informado'}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[190px]" title={s.emailResponsavel}>
+                                    {s.emailResponsavel || 'Sem e-mail'}
+                                  </div>
+                                  {s.whatsapp && (
+                                    <div className="text-[10px] text-neutral-400 flex items-center gap-1">
+                                      <Smartphone className="w-3 h-3 text-emerald-600" />
+                                      <span>{s.whatsapp}</span>
+                                    </div>
                                   )}
                                 </div>
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-neutral-900 text-sm">{s.nome}</span>
-                                    <a
-                                      href={`/#/${s.slug}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-neutral-400 hover:text-neutral-700"
-                                      title="Abrir cardápio"
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
-                                  </div>
-                                  <span className="text-[11px] text-neutral-400 block font-mono">
-                                    /{s.slug}
-                                  </span>
+                              </td>
+
+                              <td className="p-4">
+                                <div className="font-bold text-neutral-800">{s.plano || 'Profissional'}</div>
+                                <span className="text-[11px] text-neutral-500">
+                                  {formatCurrency(s.valorMensalidade || 99.9)} / mês
+                                </span>
+                              </td>
+
+                              <td className="p-4">
+                                <div className="font-bold text-neutral-800">
+                                  {vence ? vence.toLocaleDateString('pt-BR') : 'Não definida'}
                                 </div>
-                              </div>
-                            </td>
+                                <span className="text-[11px] text-neutral-400">Dia Venc.: {s.diaVencimento || 10}</span>
+                              </td>
 
-                            {/* Informações de Acesso do Responsável */}
-                            <td className="p-4">
-                              <div className="space-y-0.5">
-                                <div className="font-bold text-neutral-800 text-xs">
-                                  {s.nomeResponsavel || 'Não informado'}
-                                </div>
-                                <div className="text-[11px] text-neutral-500 font-mono truncate max-w-[190px]" title={s.emailResponsavel}>
-                                  {s.emailResponsavel || 'Sem e-mail'}
-                                </div>
-                                {s.whatsapp && (
-                                  <div className="text-[10px] text-neutral-400 flex items-center gap-1">
-                                    <Smartphone className="w-3 h-3 text-emerald-600" />
-                                    <span>{s.whatsapp}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-
-                            <td className="p-4">
-                              <div className="font-bold text-neutral-800">{s.plano || 'Profissional'}</div>
-                              <span className="text-[11px] text-neutral-500">
-                                {formatCurrency(s.valorMensalidade || 99.9)} / mês
-                              </span>
-                            </td>
-
-                            <td className="p-4">
-                              <div className="font-bold text-neutral-800">
-                                {vence ? vence.toLocaleDateString('pt-BR') : 'Não definida'}
-                              </div>
-                              <span className="text-[11px] text-neutral-400">Dia Venc.: {s.diaVencimento || 10}</span>
-                            </td>
-
-                            <td className="p-4">
-                              <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase ${
-                                  s.status === 'ativa'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : isExpired || s.status === 'vencida'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : s.status === 'aguardando_ativacao'
-                                    ? 'bg-sky-100 text-sky-800'
-                                    : 'bg-neutral-200 text-neutral-800'
-                                }`}
-                              >
-                                {s.status === 'ativa' && <Check className="w-3 h-3 text-emerald-600" />}
-                                {(isExpired || s.status === 'vencida') && <AlertTriangle className="w-3 h-3 text-rose-600" />}
-                                {s.status}
-                              </span>
-                            </td>
-
-                            <td className="p-4 pr-6 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {/* Entrar / Acessar Painel Como a Loja */}
-                                <button
-                                  onClick={() => {
-                                    setActiveStoreId(s.id);
-                                    navigate('/painel');
-                                  }}
-                                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                  title="Acessar painel e operar com todos os privilégios como esta loja"
-                                >
-                                  <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>Acessar painel da loja</span>
-                                </button>
-
-                                {/* Gerenciar Usuário, E-mail, Senha e Acesso */}
-                                <button
-                                  onClick={() => handleOpenManageUser(s)}
-                                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                                  title="Editar dados do usuário, redefinir senha temporária e ativar/desativar acesso"
-                                >
-                                  <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Gerenciar Acesso</span>
-                                </button>
-
-                                <button
-                                  onClick={() => handleOpenPaymentModal(s)}
-                                  className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Lançar pagamento mensal ou implantação"
-                                >
-                                  <DollarSign className="w-3.5 h-3.5" />
-                                  <span>Pagar</span>
-                                </button>
-
-                                <button
-                                  onClick={() => setEditingStore(s)}
-                                  className="p-2 text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors cursor-pointer"
-                                  title="Editar dados cadastrais da loja"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-
-                                <button
-                                  onClick={() => handleToggleBlockStore(s)}
-                                  className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                                    s.status === 'bloqueada'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              <td className="p-4">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase ${
+                                    s.status === 'ativa'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : isExpired || s.status === 'vencida'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : s.status === 'aguardando_ativacao'
+                                      ? 'bg-sky-100 text-sky-800'
+                                      : 'bg-neutral-200 text-neutral-800'
                                   }`}
-                                  title={s.status === 'bloqueada' ? 'Desbloquear Loja' : 'Bloquear Loja'}
                                 >
-                                  {s.status === 'bloqueada' ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                                </button>
+                                  {s.status === 'ativa' && <Check className="w-3 h-3 text-emerald-600" />}
+                                  {(isExpired || s.status === 'vencida') && <AlertTriangle className="w-3 h-3 text-rose-600" />}
+                                  {s.status}
+                                </span>
+                              </td>
 
+                              <td className="p-4 pr-6 text-right">
+                                <div className="flex items-center justify-end gap-1.5 relative">
+                                  {/* Entrar / Acessar Painel Como a Loja */}
+                                  <button
+                                    onClick={() => {
+                                      setActiveStoreId(s.id);
+                                      navigate('/painel');
+                                    }}
+                                    className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                    title="Acessar painel e operar com todos os privilégios como esta loja"
+                                  >
+                                    <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Acessar painel</span>
+                                  </button>
+
+                                  {/* Gerenciar Usuário, E-mail, Senha e Acesso */}
+                                  <button
+                                    onClick={() => handleOpenManageUser(s)}
+                                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                    title="Editar dados do usuário, redefinir senha temporária e ativar/desativar acesso"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Acesso</span>
+                                  </button>
+
+                                  {/* Menu de Três Pontos com Ações Secundárias e Exclusão */}
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenActionMenuId(isMenuOpen ? null : s.id)}
+                                      className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                                        isMenuOpen
+                                          ? 'bg-neutral-900 text-white border-neutral-900'
+                                          : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border-neutral-200'
+                                      }`}
+                                      title="Mais ações desta loja"
+                                    >
+                                      <MoreVertical className="w-4 h-4" />
+                                    </button>
+
+                                    {isMenuOpen && (
+                                      <div
+                                        className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-2xl shadow-xl border border-neutral-200 py-1.5 z-40 text-left text-xs divide-y divide-neutral-100 animate-in fade-in zoom-in-95 duration-100"
+                                        onMouseLeave={() => setOpenActionMenuId(null)}
+                                      >
+                                        <div className="py-1">
+                                          <button
+                                            onClick={() => {
+                                              handleOpenPaymentModal(s);
+                                              setOpenActionMenuId(null);
+                                            }}
+                                            className="w-full px-3.5 py-2 text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                                          >
+                                            <DollarSign className="w-4 h-4 text-emerald-600" />
+                                            <span>Lançar Pagamento</span>
+                                          </button>
+
+                                          <button
+                                            onClick={() => {
+                                              setEditingStore(s);
+                                              setOpenActionMenuId(null);
+                                            }}
+                                            className="w-full px-3.5 py-2 text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                                          >
+                                            <Edit2 className="w-4 h-4 text-neutral-500" />
+                                            <span>Editar Dados Cadastrais</span>
+                                          </button>
+
+                                          <button
+                                            onClick={() => {
+                                              handleToggleBlockStore(s);
+                                              setOpenActionMenuId(null);
+                                            }}
+                                            className="w-full px-3.5 py-2 text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                                          >
+                                            {s.status === 'bloqueada' ? (
+                                              <>
+                                                <Unlock className="w-4 h-4 text-emerald-600" />
+                                                <span>Desbloquear Loja</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Lock className="w-4 h-4 text-amber-600" />
+                                                <span>Bloquear Funcionamento</span>
+                                              </>
+                                            )}
+                                          </button>
+
+                                          <button
+                                            onClick={() => {
+                                              setViewingPaymentsStore(s);
+                                              setOpenActionMenuId(null);
+                                            }}
+                                            className="w-full px-3.5 py-2 text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                                          >
+                                            <FileText className="w-4 h-4 text-neutral-500" />
+                                            <span>Extrato Financeiro</span>
+                                          </button>
+                                        </div>
+
+                                        {/* Ação Destacada em Vermelho: Excluir Loja */}
+                                        <div className="pt-1">
+                                          <button
+                                            onClick={() => {
+                                              setDeletingStore(s);
+                                              setConfirmSlugInput('');
+                                              setOpenActionMenuId(null);
+                                            }}
+                                            className="w-full px-3.5 py-2.5 text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-black transition-colors cursor-pointer"
+                                          >
+                                            <Trash2 className="w-4 h-4 text-rose-600" />
+                                            <span>Excluir Loja</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* TABELA DE LOJAS EXCLUÍDAS COM AÇÃO DE RESTAURAR */
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                    <thead>
+                      <tr className="bg-neutral-50/50 border-b border-neutral-200 font-bold text-neutral-500 uppercase tracking-wider text-[11px]">
+                        <th className="p-4 pl-6">Loja Excluída</th>
+                        <th className="p-4">Responsável Original</th>
+                        <th className="p-4">Data da Exclusão</th>
+                        <th className="p-4">Excluída Por</th>
+                        <th className="p-4">Histórico</th>
+                        <th className="p-4 pr-6 text-right">Ação de Restauração</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {excludedStores.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-12 text-center text-neutral-400">
+                            Nenhuma loja excluída no momento.
+                          </td>
+                        </tr>
+                      ) : (
+                        excludedStores.map((s) => {
+                          const orderCount = allOrders.filter((o) => o.storeId === s.id).length;
+                          return (
+                            <tr key={s.id} className="hover:bg-neutral-50/80 transition-colors bg-neutral-50/30">
+                              <td className="p-4 pl-6">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-2xl bg-neutral-200 text-neutral-500 border border-neutral-300 overflow-hidden flex items-center justify-center font-bold flex-shrink-0">
+                                    {s.logo ? (
+                                      <img src={s.logo} alt={s.nome} className="w-full h-full object-cover grayscale opacity-70" />
+                                    ) : (
+                                      s.nome.slice(0, 2).toUpperCase()
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-neutral-700 text-sm line-through">{s.nome}</span>
+                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full font-bold text-[10px]">
+                                        Excluída
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-neutral-400 block font-mono">
+                                      /{s.slug}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="p-4">
+                                <div className="space-y-0.5">
+                                  <div className="font-bold text-neutral-700 text-xs">
+                                    {s.nomeResponsavel || 'Não informado'}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500 font-mono">
+                                    {s.emailResponsavel || 'Sem e-mail'}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="p-4">
+                                <div className="font-mono text-neutral-700 font-bold">
+                                  {s.excluidaEm ? new Date(s.excluidaEm).toLocaleString('pt-BR') : 'Não registrada'}
+                                </div>
+                              </td>
+
+                              <td className="p-4">
+                                <span className="font-mono text-neutral-600 text-xs">
+                                  {s.excluidaPor || 'Admin Master'}
+                                </span>
+                              </td>
+
+                              <td className="p-4">
+                                <span className="font-bold text-neutral-800">
+                                  {orderCount} pedido(s) preservado(s)
+                                </span>
+                              </td>
+
+                              <td className="p-4 pr-6 text-right">
                                 <button
-                                  onClick={() => setViewingPaymentsStore(s)}
-                                  className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-[11px] transition-colors cursor-pointer"
-                                  title="Ver extrato de pagamentos"
+                                  type="button"
+                                  onClick={() => handleRestoreStore(s)}
+                                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ml-auto"
+                                  title="Restaurar loja para operação (será reaberta como fechada para revisão operacional)"
                                 >
-                                  Extrato
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Restaurar Loja</span>
                                 </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1830,6 +2042,61 @@ export const SuperAdminPage: React.FC = () => {
                     placeholder={SUPPORT_WHATSAPP}
                     className="w-full p-3 border border-neutral-300 rounded-xl focus:outline-none focus:border-rose-500 font-mono"
                   />
+                </div>
+
+                <div className="pt-4 border-t border-neutral-100 space-y-3">
+                  <div>
+                    <h3 className="font-black text-neutral-800 text-xs uppercase tracking-wider">
+                      Lojas Demonstrativas da Landing Page
+                    </h3>
+                    <p className="text-[11px] text-neutral-500">
+                      Defina quais lojas serão abertas nas demonstrações públicas na Landing Page.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-neutral-700 mb-1">
+                        Demonstração de Açaí (Slug)
+                      </label>
+                      <select
+                        value={saasConfig.demoAcaiSlug || 'boradeacai'}
+                        onChange={(e) => setSaasConfig({ ...saasConfig, demoAcaiSlug: e.target.value })}
+                        className="w-full p-2.5 border border-neutral-300 rounded-xl font-bold text-xs bg-white focus:outline-none focus:border-rose-500"
+                      >
+                        <option value="boradeacai">/boradeacai (Padrão)</option>
+                        <option value="bora-de-acai">/bora-de-acai</option>
+                        {operatingStores
+                          .filter((s) => s.slug !== 'boradeacai' && s.slug !== 'bora-de-acai')
+                          .map((s) => (
+                            <option key={s.id} value={s.slug}>
+                              {s.nome} (/{s.slug})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-neutral-700 mb-1">
+                        Demonstração de Hamburgueria (Slug)
+                      </label>
+                      <select
+                        value={saasConfig.demoBurgerSlug || 'megaburger'}
+                        onChange={(e) => setSaasConfig({ ...saasConfig, demoBurgerSlug: e.target.value })}
+                        className="w-full p-2.5 border border-neutral-300 rounded-xl font-bold text-xs bg-white focus:outline-none focus:border-rose-500"
+                      >
+                        <option value="megaburger">/megaburger (Padrão)</option>
+                        <option value="mega-burger">/mega-burger</option>
+                        {operatingStores
+                          .filter((s) => s.slug !== 'megaburger' && s.slug !== 'mega-burger')
+                          .map((s) => (
+                            <option key={s.id} value={s.slug}>
+                              {s.nome} (/{s.slug})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-2">
@@ -2660,6 +2927,181 @@ export const SuperAdminPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL DE EXCLUSÃO LÓGICA DE LOJA COM VALIDAÇÕES E TRAVA DE SLUG */}
+      {deletingStore && (() => {
+        const activeOrdersForStore = allOrders.filter(
+          (o) => o.storeId === deletingStore.id && ['novo', 'aceito', 'preparo', 'saiu_entrega', 'pronto'].includes(o.status)
+        );
+        const totalOrdersForStore = allOrders.filter((o) => o.storeId === deletingStore.id).length;
+        const pendingFeesForStore = feeEntries.filter(
+          (f) => f.storeId === deletingStore.id && (f.status === 'pendente' || f.status === 'pendente_conferencia')
+        );
+        const pendingInvoicesForStore = invoices.filter(
+          (i) => i.storeId === deletingStore.id && (i.status === 'em_aberto' || i.status === 'aguardando_confirmacao' || i.status === 'vencida' || i.status === 'parcialmente_paga')
+        );
+        const totalPendingFinancial =
+          pendingFeesForStore.reduce((acc, f) => acc + (f.taxaAplicada || 0), 0) +
+          pendingInvoicesForStore.reduce((acc, i) => acc + (i.saldoPendente || i.valorTotalAPagar || 0), 0);
+
+        const isDemoAcai = deletingStore.slug === (saasConfig?.demoAcaiSlug || 'boradeacai') || deletingStore.slug === 'bora-de-acai';
+        const isDemoBurger = deletingStore.slug === (saasConfig?.demoBurgerSlug || 'megaburger') || deletingStore.slug === 'mega-burger';
+        const isLinkedToDemo = isDemoAcai || isDemoBurger;
+
+        const hasSlugMatch = confirmSlugInput.trim().toLowerCase() === deletingStore.slug.toLowerCase();
+        const canDelete = hasSlugMatch && activeOrdersForStore.length === 0 && !isLinkedToDemo;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-neutral-200 my-8">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-neutral-900">Excluir Loja da Plataforma</h3>
+                    <p className="text-xs text-neutral-500">Exclusão lógica segura com preservação de histórico e auditoria</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeletingStore(null);
+                    setConfirmSlugInput('');
+                  }}
+                  className="p-1.5 text-neutral-400 hover:text-neutral-700 rounded-xl cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Detalhes da Loja */}
+              <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/80 space-y-2 text-xs">
+                <div className="flex justify-between py-1 border-b border-neutral-200/60">
+                  <span className="text-neutral-500 font-semibold">Nome da Loja:</span>
+                  <span className="font-bold text-neutral-900">{deletingStore.nome}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-neutral-200/60">
+                  <span className="text-neutral-500 font-semibold">Slug:</span>
+                  <span className="font-mono font-bold text-neutral-800">/{deletingStore.slug}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-neutral-200/60">
+                  <span className="text-neutral-500 font-semibold">E-mail do Responsável:</span>
+                  <span className="font-mono text-neutral-700">{deletingStore.emailResponsavel || 'Não cadastrado'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-neutral-200/60">
+                  <span className="text-neutral-500 font-semibold">Histórico de Pedidos:</span>
+                  <span className="font-bold text-neutral-900">{totalOrdersForStore} pedido(s) registrado(s)</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-neutral-500 font-semibold">Pendências Financeiras:</span>
+                  {totalPendingFinancial > 0 ? (
+                    <span className="font-bold text-amber-700">R$ {totalPendingFinancial.toFixed(2)} pendentes</span>
+                  ) : (
+                    <span className="font-bold text-emerald-700">Nenhuma pendência financeira</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Alerta de Pedidos em Andamento */}
+              {activeOrdersForStore.length > 0 && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-rose-800">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>Exclusão Bloqueada: {activeOrdersForStore.length} pedido(s) em andamento</span>
+                  </div>
+                  <p className="text-rose-700 leading-relaxed">
+                    Existem pedidos ativos no fluxo operacional desta loja. Finalize ou cancele esses pedidos antes de prosseguir com a exclusão.
+                  </p>
+                  <div className="max-h-28 overflow-y-auto space-y-1 font-mono text-[11px] bg-white p-2 rounded-xl border border-rose-200">
+                    {activeOrdersForStore.map((o) => (
+                      <div key={o.id} className="flex justify-between text-neutral-800">
+                        <span>#{o.numero || o.id.slice(0, 6)} • Status: {o.status}</span>
+                        <span>R$ {(o.total || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Alerta se Vinculada à Demonstração da Landing Page */}
+              {isLinkedToDemo && (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-xs space-y-1">
+                  <div className="flex items-center gap-2 font-bold text-amber-900">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>Loja Vinculada à Demonstração da Landing Page</span>
+                  </div>
+                  <p className="text-amber-800 leading-relaxed">
+                    Esta loja está atualmente configurada como exemplo na Landing Page ({isDemoAcai ? 'Cardápio de Açaí' : 'Cardápio de Hamburgueria'}).
+                    Acesse a aba <strong>Configurações Globais do SaaS</strong> para alterar a loja demonstrativa antes de excluir esta loja.
+                  </p>
+                </div>
+              )}
+
+              {/* Trava por Digitação do Slug */}
+              <div className="space-y-2 text-xs">
+                <label className="block text-neutral-700 font-bold">
+                  Para confirmar a exclusão, digite exatamente o slug da loja: <span className="font-mono text-rose-600 font-black">{deletingStore.slug}</span>
+                </label>
+                <input
+                  type="text"
+                  value={confirmSlugInput}
+                  onChange={(e) => setConfirmSlugInput(e.target.value)}
+                  placeholder={deletingStore.slug}
+                  disabled={activeOrdersForStore.length > 0 || isLinkedToDemo}
+                  className="w-full p-3 border border-neutral-300 rounded-xl font-mono text-sm font-bold focus:outline-none focus:border-rose-500 disabled:bg-neutral-100 disabled:cursor-not-allowed"
+                />
+                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                  A exclusão é recuperável: o cardápio público e o painel operacional serão suspensos, mas pedidos e faturas são mantidos e você poderá restaurar a loja quando quiser pelo filtro "Lojas Excluídas".
+                </p>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeletingStore(null);
+                    setConfirmSlugInput('');
+                  }}
+                  className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!canDelete || isDeletingLoading}
+                  onClick={async () => {
+                    if (!canDelete || !currentUser) return;
+                    setIsDeletingLoading(true);
+                    try {
+                      await softDeleteStoreInFirestore(
+                        deletingStore.id,
+                        currentUser.email || 'master',
+                        deletingStore.slug,
+                        deletingStore.nome
+                      );
+                      showToast(`Loja "${deletingStore.nome}" foi excluída com sucesso.`, 'success');
+                      setDeletingStore(null);
+                      setConfirmSlugInput('');
+                    } catch (err) {
+                      console.error(err);
+                      showToast('Erro ao excluir loja.', 'error');
+                    } finally {
+                      setIsDeletingLoading(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingLoading ? 'Excluindo...' : 'Excluir Loja'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
